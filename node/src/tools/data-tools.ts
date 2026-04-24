@@ -35,6 +35,12 @@ export function registerDataTools(server: ServerInstance) {
         workspaceId: z.string().describe("The ID of the workspace where the query will be executed"),
         sql_query: z.string().describe("The SQL query to be executed"),
         orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+        },
+        annotations: {
+          title: "Query Data",
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, sql_query, orgId }) => {
@@ -106,6 +112,12 @@ export function registerDataTools(server: ServerInstance) {
         `,
         inputSchema: {
             file_path: z.string().describe("The path to the local file to be analyzed")
+        },
+        annotations: {
+          title: "Analyze File Structure",
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false
         }
     },
     async ({ file_path }) => {
@@ -216,6 +228,12 @@ export function registerDataTools(server: ServerInstance) {
             response_file_format: z.enum(["csv", "html", "pdf", "json", "xml", "xls", "image"]).describe('The format in which to export the objects. Supported formats are ["csv","json","xml","xls","pdf","html","image"].'),
             response_file_path: z.string().describe("The path where the exported file will be saved"),
             orgId: z.string().optional().describe("The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.")
+        },
+        annotations: {
+          title: "Export View",
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, view_id, response_file_format, response_file_path, orgId }) => {
@@ -293,6 +311,12 @@ export function registerDataTools(server: ServerInstance) {
         `,
         inputSchema: {
         file_url: z.string().describe("The URL of the file to be downloaded")
+        },
+        annotations: {
+          title: "Download File",
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true
         }
     },
     async ({ file_url }) => {
@@ -353,6 +377,12 @@ export function registerDataTools(server: ServerInstance) {
             file_path: z.string().optional().describe("The path to a local file containing data to be added to the table"),
             file_type: z.enum(["csv", "json"]).optional().describe("The type of the file being imported (\"csv\", \"json\")"),
             orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+        },
+        annotations: {
+          title: "Import Data",
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableId, data, file_path, file_type, orgId }) => {

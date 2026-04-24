@@ -15,18 +15,17 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "@types/node": "^24.0.3",
-    "nodemon": "^3.1.10",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "@types/node": "24.0.3",
+    "nodemon": "3.1.10",
+    "ts-node": "10.9.2",
+    "typescript": "5.8.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.3",
-    "axios": "^1.11.0",
-    "csv-parser": "^3.2.0",
-    "dedent": "^1.6.0",
-    "dotenv": "^17.0.1",
-    "request": "^2.88.2"
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "axios": "1.15.2",
+    "csv-parser": "3.2.0",
+    "dedent": "1.6.0",
+    "dotenv": "17.0.1"
   },
   "files": [
     "dist"
