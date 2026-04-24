@@ -3,7 +3,9 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const querystring = require('querystring');
-const request = require('request');
+// const request = require('request'); // Commented out - replaced with axios
+const axios = require('axios');
+const FormData = require('form-data');
 const clientVersion = "2.6.0";
 
 
@@ -268,31 +270,64 @@ class AnalyticsClient
         header.Authorization = 'Zoho-oauthtoken ' + this.accessToken;
         return new Promise(function(resolve, reject) {
 
-            const formData = {
-                FILE: {
-                value: Buffer.from(batch),
-                options: {
-                    filename: 'batch.csv'
+            // Old request-based implementation (commented out)
+            // const formData = {
+            //     FILE: {
+            //     value: Buffer.from(batch),
+            //     options: {
+            //         filename: 'batch.csv'
+            //     }
+            //     }
+            // };
+            // 
+            // request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
+            //     if (err) 
+            //     {
+            //         reject(JSON.parse(err));  
+            //     } 
+            //     else 
+            //     {
+            //         let respJSON = (JSON.parse(body));
+            //         if(resp.statusCode!==200)
+            //         {
+            //             reject(respJSON.data)
+            //         }
+            //         else
+            //         {
+            //             resolve(respJSON.data)
+            //         }
+            //     }
+            // });
+
+            // New axios-based implementation
+            const formData = new FormData();
+            formData.append('FILE', Buffer.from(batch), {
+                filename: 'batch.csv'
+            });
+
+            const httpsAgent = new https.Agent({
+                secureProtocol: 'TLSv1_2_method'
+            });
+
+            axios.post(url, formData, {
+                headers: {
+                    ...header,
+                    ...formData.getHeaders()
+                },
+                httpsAgent: httpsAgent
+            })
+            .then(resp => {
+                if(resp.status !== 200) {
+                    reject(resp.data.data);
+                } else {
+                    resolve(resp.data.data);
                 }
-                }
-            };
-            
-            request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
-                if (err) 
-                {
-                    reject(JSON.parse(err));  
-                } 
-                else 
-                {
-                    let respJSON = (JSON.parse(body));
-                    if(resp.statusCode!==200)
-                    {
-                        reject(respJSON.data)
-                    }
-                    else
-                    {
-                        resolve(respJSON.data)
-                    }
+            })
+            .catch(err => {
+                if(err.response) {
+                    reject(err.response.data.data);
+                } else {
+                    reject(err.message);
                 }
             });
         });
@@ -335,63 +370,126 @@ class AnalyticsClient
       {
         return new Promise(function(resolve, reject) {
                     
-//                    const { Readable } = require("stream")
-//                    const readable = Readable.from(data).then()
-                    let formData = {  
-                      'DATA': data
-                    };
-                    header['Content-Type'] = 'application/x-www-form-urlencoded';
-                    var req = request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
-                    if (err) 
-                    {
-                        reject(JSON.parse(err));  
-                    } 
-                    else 
-                    {
-                        let respJSON = (JSON.parse(body));
-                        if(resp.statusCode!==200)
-                        {
-                            reject(respJSON.data)
-                        }
-                        else
-                        {
-                            resolve(respJSON.data)
-                        }
-                    }
-          
-                });
+            // Old request-based implementation (commented out)
+            // let formData = {  
+            //   'DATA': data
+            // };
+            // header['Content-Type'] = 'application/x-www-form-urlencoded';
+            // var req = request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
+            // if (err) 
+            // {
+            //     reject(JSON.parse(err));  
+            // } 
+            // else 
+            // {
+            //     let respJSON = (JSON.parse(body));
+            //     if(resp.statusCode!==200)
+            //     {
+            //         reject(respJSON.data)
+            //     }
+            //     else
+            //     {
+            //         resolve(respJSON.data)
+            //     }
+            // }
+            // });
+
+            // New axios-based implementation
+            const formData = new FormData();
+            formData.append('DATA', data);
+
+            const httpsAgent = new https.Agent({
+                secureProtocol: 'TLSv1_2_method'
+            });
+
+            axios.post(url, formData, {
+                headers: {
+                    ...header,
+                    ...formData.getHeaders()
+                },
+                httpsAgent: httpsAgent
+            })
+            .then(resp => {
+                if(resp.status !== 200) {
+                    reject(resp.data.data);
+                } else {
+                    resolve(resp.data.data);
+                }
+            })
+            .catch(err => {
+                if(err.response) {
+                    reject(err.response.data.data);
+                } else {
+                    reject(err.message);
+                }
+            });
         });
       }
       else
       {
         return new Promise(function(resolve, reject) {
 
-                    var zohofile = fs.createReadStream(filePath);
-                    zohofile.on('error', err =>{reject(err);});
-                    zohofile.once('readable', function() {
+            // Old request-based implementation (commented out)
+            // var zohofile = fs.createReadStream(filePath);
+            // zohofile.on('error', err =>{reject(err);});
+            // zohofile.once('readable', function() {
+            //
+            // let formData = {  
+            //   'FILE': zohofile
+            // };
+            //
+            // var req = request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
+            //     if (err) 
+            //     {
+            //         reject(JSON.parse(err));  
+            //     } 
+            //     else 
+            //     {
+            //         let respJSON = (JSON.parse(body));
+            //         if(resp.statusCode!==200)
+            //         {
+            //             reject(respJSON.data)
+            //         }
+            //         else
+            //         {
+            //             resolve(respJSON.data)
+            //         }
+            //     }
+            // });
+            // });
 
-                    let formData = {  
-                      'FILE': zohofile
-                    };
+            // New axios-based implementation
+            var zohofile = fs.createReadStream(filePath);
+            zohofile.on('error', err => {reject(err);});
+            zohofile.once('readable', function() {
 
-                var req = request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
-                    if (err) 
-                    {
-                        reject(JSON.parse(err));  
-                    } 
-                    else 
-                    {
-                        let respJSON = (JSON.parse(body));
-                        if(resp.statusCode!==200)
-                        {
-                            reject(respJSON.data)
-                        }
-                        else
-                        {
-                            resolve(respJSON.data)
-                        }
+                const formData = new FormData();
+                formData.append('FILE', zohofile);
+
+                const httpsAgent = new https.Agent({
+                    secureProtocol: 'TLSv1_2_method'
+                });
+
+                axios.post(url, formData, {
+                    headers: {
+                        ...header,
+                        ...formData.getHeaders()
+                    },
+                    httpsAgent: httpsAgent
+                })
+                .then(resp => {
+                    if(resp.status !== 200) {
+                        reject(resp.data.data);
+                    } else {
+                        resolve(resp.data.data);
                     }
-          
+                })
+                .catch(err => {
+                    if(err.response) {
+                        reject(err.response.data.data);
+                    } else {
+                        reject(err.message);
+                    }
                 });
             });
         });
@@ -433,25 +531,58 @@ class AnalyticsClient
       }
       const url = 'https://' + this.analyticsURI + uriPath;
     return new Promise(function(resolve, reject) {
-        var req = request.get({url:url,encoding: null,headers:header,secureProtocol: 'TLSv1_2_method'}, (err, resp, body)=> {
-        if (err) 
-        {
-            reject(JSON.parse(err));  
-        } 
-        else 
-        {
-            if(resp.statusCode!==200)
-            {
-                let respJSON = (JSON.parse(body));
-                reject(respJSON.data)
-            }
-            else
-            {
-                fs.writeFileSync(filePath, body);
+        
+        // Old request-based implementation (commented out)
+        // var req = request.get({url:url,encoding: null,headers:header,secureProtocol: 'TLSv1_2_method'}, (err, resp, body)=> {
+        // if (err) 
+        // {
+        //     reject(JSON.parse(err));  
+        // } 
+        // else 
+        // {
+        //     if(resp.statusCode!==200)
+        //     {
+        //         let respJSON = (JSON.parse(body));
+        //         reject(respJSON.data)
+        //     }
+        //     else
+        //     {
+        //         fs.writeFileSync(filePath, body);
+        //         resolve();
+        //     }
+        // }
+        // });
+
+        // New axios-based implementation
+        const httpsAgent = new https.Agent({
+            secureProtocol: 'TLSv1_2_method'
+        });
+
+        axios.get(url, {
+            headers: header,
+            httpsAgent: httpsAgent,
+            responseType: 'arraybuffer'
+        })
+        .then(resp => {
+            if(resp.status !== 200) {
+                let respJSON = (JSON.parse(resp.data));
+                reject(respJSON.data);
+            } else {
+                fs.writeFileSync(filePath, resp.data);
                 resolve();
             }
-        }
-      
+        })
+        .catch(err => {
+            if(err.response) {
+                if(err.response.status !== 200) {
+                    let respJSON = (JSON.parse(err.response.data));
+                    reject(respJSON.data);
+                } else {
+                    reject(err.message);
+                }
+            } else {
+                reject(err.message);
+            }
         });
       });
 
