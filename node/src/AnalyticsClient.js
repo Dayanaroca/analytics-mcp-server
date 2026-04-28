@@ -2,16 +2,14 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const querystring = require('querystring');
-// const request = require('request'); // Commented out - replaced with axios
-const axios = require('axios');
+const { Readable } = require('stream');
 const FormData = require('form-data');
-const clientVersion = "2.6.0";
+const querystring = require('querystring');
+const clientVersion = "2.8.0";
 
 
 class AnalyticsClient
 {
-
     constructor(clientId, clientSecret, refreshToken, analyticsURI = "analyticsapi.zoho.com", accountsURI = "accounts.zoho.com") {
         this.clientId = clientId;
         this.clientSecret = clientSecret;
@@ -219,516 +217,457 @@ class AnalyticsClient
         });
     }
 
-    async handleBatchImportRequest(uriPath, config, header, filePath, batchSize)
+    parseCSV(content, delimiter = ',', quotechar = '"') {
+        const rows = [];
+        let row = [];
+        let field = '';
+        let inQuotes = false;
+    
+        for (let i = 0; i < content.length; i++) {
+            const char = content[i];
+            const nextChar = content[i + 1];
+    
+            if (char === quotechar) {
+                if (inQuotes && nextChar === quotechar) {
+                    field += quotechar; // escaped quote
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === delimiter && !inQuotes) {
+                row.push(field);
+                field = '';
+            } else if (char === '\n' && !inQuotes) {
+                row.push(field);
+                rows.push(row);
+                row = [];
+                field = '';
+            } else {
+                field += char;
+            }
+        }
+    
+        // last field
+        if (field.length || row.length) {
+            row.push(field);
+            rows.push(row);
+        }
+    
+        return rows;
+    }
+
+    stringifyCSV(rows, delimiter = ',', quotechar = '"') 
     {
-        const {EOL} = require('os');
-        var jobId;
-        var data = fs.readFileSync(filePath, 'utf8');
-        var fileContent = data.split(EOL);
-        const fileHeader = fileContent.shift() + EOL;
-        var totalLines = fileContent.length;
-        var totalBatchCount = Math.ceil(totalLines / batchSize);
-        config.batchKey = "start";
+        return rows.map(row =>
+            row.map(field => {
+                field = field ?? '';
+                if (
+                    field.includes(delimiter) ||
+                    field.includes('\n') ||
+                    field.includes(quotechar)
+                ) {
+                    return quotechar +
+                        field.replaceAll(quotechar, quotechar + quotechar) +
+                        quotechar;
+                }
+                return field;
+            }).join(delimiter)
+        ).join('\n') + '\n';
+    }
 
-        header['User-Agent'] = 'MCP Server NPM Client: v1';
-        for (let i = 0; i < totalBatchCount; i++)
-        {   
-            let batch = fileContent.slice(batchSize*i, batchSize + (i * batchSize))
-            batch = fileHeader + batch.join(EOL)
-
-            config.isLastBatch = (i == (totalBatchCount - 1))? "true" : "false"
-            
-            var encodedConfig = encodeURIComponent(JSON.stringify(config));
-            var url = 'https://'+this.analyticsURI + uriPath + "?" + "CONFIG" + "=" + encodedConfig;
-
-            if(this.accessToken == null)
-            {
+    async handleBatchImportRequest(uriPath, config, header, filePath, batchSize, toolConfig = {}) {
+        const fs = require('fs');
+        const https = require('https');
+        const FormData = require('form-data');
+    
+        header['User-Agent'] = 'MCP Server NPM Client: v1' + clientVersion;
+    
+        const delimiters = [',', '\t', ';', ' ', '|'];
+        const quotedChars = ['\u0000', '\'', '"'];
+    
+        const delimiter = delimiters[config.delimiter ?? 0];
+        const quotechar = quotedChars[config.quoted ?? 2];
+        const isFirstRowHeader = toolConfig.isFirstRowHeader !== false;
+    
+        config.batchKey = 'start';
+    
+        const fileData = fs.readFileSync(filePath, 'utf8');
+    
+        const records = this.parseCSV(fileData, delimiter, quotechar);
+    
+        if (!records.length) return null;
+    
+        let headers;
+        let index = 0;
+    
+        if (isFirstRowHeader) {
+            headers = records[0];
+            index = 1;
+        } else {
+            headers = toolConfig.columnHeaders;
+            if (!headers || !headers.length) {
+                throw new Error(
+                    'columnHeaders cannot be empty when isFirstRowHeader is false'
+                );
+            }
+        }
+    
+        let jobId;
+        let response;
+    
+        while (index < records.length) {
+            const batchRows = records.slice(index, index + batchSize);
+            index += batchSize;
+    
+            const isLastBatch = index >= records.length;
+            config.isLastBatch = String(isLastBatch);
+    
+            const csvBatch = this.stringifyCSV(
+                [headers, ...batchRows],
+                delimiter,
+                quotechar
+            );
+    
+            const encodedConfig = encodeURIComponent(JSON.stringify(config));
+            const url = 'https://' + this.analyticsURI + uriPath + '?CONFIG=' + encodedConfig;
+    
+            if (!this.accessToken) {
                 this.accessToken = await this.getOauth();
             }
-            var response = await this.sendBatchImportRequest(url, header, batch).catch(async error=>
-            {
-                if(error.errorCode == "8535")
-                {
+    
+            try {
+                response = await this.sendBatchImportRequest(url, header, csvBatch);
+            } catch (err) {
+                if (err.errorCode === '8535') {
                     this.accessToken = await this.getOauth();
-                    response = await this.sendBatchImportRequest(url, header, batch);
+                    response = await this.sendBatchImportRequest(url, header, csvBatch);
+                } else {
+                    throw err;
                 }
-                else
-                {
-                    throw error;
-                }
-            });
-
+            }
+    
             config.batchKey = response.batchKey;
             jobId = response.jobId;
-            await this.sleep(2000);
+    
+            if (!isLastBatch) {
+                await this.sleep(2000);
+            }
         }
+    
         return jobId;
     }
-
-    sendBatchImportRequest(url, header, batch)
-    {
-        header.Authorization = 'Zoho-oauthtoken ' + this.accessToken;
-        return new Promise(function(resolve, reject) {
-
-            // Old request-based implementation (commented out)
-            // const formData = {
-            //     FILE: {
-            //     value: Buffer.from(batch),
-            //     options: {
-            //         filename: 'batch.csv'
-            //     }
-            //     }
-            // };
-            // 
-            // request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
-            //     if (err) 
-            //     {
-            //         reject(JSON.parse(err));  
-            //     } 
-            //     else 
-            //     {
-            //         let respJSON = (JSON.parse(body));
-            //         if(resp.statusCode!==200)
-            //         {
-            //             reject(respJSON.data)
-            //         }
-            //         else
-            //         {
-            //             resolve(respJSON.data)
-            //         }
-            //     }
-            // });
-
-            // New axios-based implementation
-            const formData = new FormData();
-            formData.append('FILE', Buffer.from(batch), {
-                filename: 'batch.csv'
-            });
-
-            const httpsAgent = new https.Agent({
-                secureProtocol: 'TLSv1_2_method'
-            });
-
-            axios.post(url, formData, {
-                headers: {
-                    ...header,
-                    ...formData.getHeaders()
-                },
-                httpsAgent: httpsAgent
-            })
-            .then(resp => {
-                if(resp.status !== 200) {
-                    reject(resp.data.data);
-                } else {
-                    resolve(resp.data.data);
-                }
-            })
-            .catch(err => {
-                if(err.response) {
-                    reject(err.response.data.data);
-                } else {
-                    reject(err.message);
-                }
-            });
-        });
-    }
-
-    async handleImportRequest(uriPath, config, header, filePath, data=null)
-    {
-        if(this.accessToken == null)
-        {
-            this.accessToken = await this.getOauth();
-        }
-        return await this.sendImportRequest(uriPath, config, header, filePath, data).catch(async error=>
-        {
-            if(error.errorCode == "8535")
-            {
-                this.accessToken = await this.getOauth();
-                return await this.sendImportRequest(uriPath, config, header, filePath, data);
-            }
-            else
-            {
-                throw error;
-            }
-        });
-    }
-
-    sendImportRequest(uriPath, config, header={}, filePath, data)
-    {
-      header['User-Agent'] = 'MCP Server NPM Client: v1';
-      header.Authorization = 'Zoho-oauthtoken ' + this.accessToken;
-
-      if(config !== null)
-      {
-        var encodedConfig = encodeURIComponent(JSON.stringify(config));
-        var configParam = "CONFIG" + "=" + encodedConfig;
-        uriPath = uriPath + "?" + configParam;
-      }
-      var url = 'https://'+this.analyticsURI+uriPath;
-
-      if(data !== null)
-      {
-        return new Promise(function(resolve, reject) {
-                    
-            // Old request-based implementation (commented out)
-            // let formData = {  
-            //   'DATA': data
-            // };
-            // header['Content-Type'] = 'application/x-www-form-urlencoded';
-            // var req = request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
-            // if (err) 
-            // {
-            //     reject(JSON.parse(err));  
-            // } 
-            // else 
-            // {
-            //     let respJSON = (JSON.parse(body));
-            //     if(resp.statusCode!==200)
-            //     {
-            //         reject(respJSON.data)
-            //     }
-            //     else
-            //     {
-            //         resolve(respJSON.data)
-            //     }
-            // }
-            // });
-
-            // New axios-based implementation
-            const formData = new FormData();
-            formData.append('DATA', data);
-
-            const httpsAgent = new https.Agent({
-                secureProtocol: 'TLSv1_2_method'
-            });
-
-            axios.post(url, formData, {
-                headers: {
-                    ...header,
-                    ...formData.getHeaders()
-                },
-                httpsAgent: httpsAgent
-            })
-            .then(resp => {
-                if(resp.status !== 200) {
-                    reject(resp.data.data);
-                } else {
-                    resolve(resp.data.data);
-                }
-            })
-            .catch(err => {
-                if(err.response) {
-                    reject(err.response.data.data);
-                } else {
-                    reject(err.message);
-                }
-            });
-        });
-      }
-      else
-      {
-        return new Promise(function(resolve, reject) {
-
-            // Old request-based implementation (commented out)
-            // var zohofile = fs.createReadStream(filePath);
-            // zohofile.on('error', err =>{reject(err);});
-            // zohofile.once('readable', function() {
-            //
-            // let formData = {  
-            //   'FILE': zohofile
-            // };
-            //
-            // var req = request.post({url:url, headers:header, formData:formData, secureProtocol:'TLSv1_2_method'}, (err, resp, body)=> {
-            //     if (err) 
-            //     {
-            //         reject(JSON.parse(err));  
-            //     } 
-            //     else 
-            //     {
-            //         let respJSON = (JSON.parse(body));
-            //         if(resp.statusCode!==200)
-            //         {
-            //             reject(respJSON.data)
-            //         }
-            //         else
-            //         {
-            //             resolve(respJSON.data)
-            //         }
-            //     }
-            // });
-            // });
-
-            // New axios-based implementation
-            var zohofile = fs.createReadStream(filePath);
-            zohofile.on('error', err => {reject(err);});
-            zohofile.once('readable', function() {
-
-                const formData = new FormData();
-                formData.append('FILE', zohofile);
-
-                const httpsAgent = new https.Agent({
-                    secureProtocol: 'TLSv1_2_method'
-                });
-
-                axios.post(url, formData, {
-                    headers: {
-                        ...header,
-                        ...formData.getHeaders()
-                    },
-                    httpsAgent: httpsAgent
-                })
-                .then(resp => {
-                    if(resp.status !== 200) {
-                        reject(resp.data.data);
-                    } else {
-                        resolve(resp.data.data);
-                    }
-                })
-                .catch(err => {
-                    if(err.response) {
-                        reject(err.response.data.data);
-                    } else {
-                        reject(err.message);
-                    }
-                });
-            });
-        });
-      }
     
 
+    sendBatchImportRequest(url, header, batch) {
+        header['Authorization'] = 'Zoho-oauthtoken ' + this.accessToken;
+
+        return new Promise((resolve, reject) => {
+            const form = new FormData();
+            form.append('FILE', Buffer.from(batch), { filename: 'batch.csv' });
+
+            const requestOptions = {
+                method: 'POST',
+                headers: {
+                    ...header,
+                    ...form.getHeaders()
+                }
+            };
+
+            const req = https.request(url, requestOptions, (resp) => {
+                let data = '';
+                resp.on('data', (chunk) => { data += chunk; });
+                resp.on('end', () => {
+                    const respJSON = JSON.parse(data);
+                    if (resp.statusCode !== 200) {
+                        reject(respJSON.data);
+                    } else {
+                        resolve(respJSON.data);
+                    }
+                });
+            });
+
+            req.on('error', (err) => {
+                reject({ errorCode: '0', errorMessage: err.message });
+            });
+
+            form.pipe(req);
+        });
     }
 
-    async handleExportRequest(uriPath, filePath, config, header)
-    {
-        if(this.accessToken == null)
-        {
+async handleImportRequest(uriPath, config, header, filePath, data = null) {
+    if (this.accessToken == null) {
+        this.accessToken = await this.getOauth();
+    }
+    return await this.sendImportRequest(uriPath, config, header, filePath, data).catch(async error => {
+        if (error.errorCode == "8535") {
             this.accessToken = await this.getOauth();
+            return await this.sendImportRequest(uriPath, config, header, filePath, data);
+        } else {
+            throw error;
         }
-        return await this.sendExportRequest(uriPath, filePath, config, header).catch(async error=>
-        {
-            if(error.errorCode == "8535")
-            {
-                this.accessToken = await this.getOauth();
-                return await this.sendExportRequest(uriPath, filePath, config, header);
-            }
-            else
-            {
-                throw error;
-            }
-        });
+    });
+}
+
+sendImportRequest(uriPath, config, header = {}, filePath, data) {
+    header['User-Agent'] = 'MCP Server NPM Client: v1' + clientVersion;
+    header['Authorization'] = 'Zoho-oauthtoken ' + this.accessToken;
+
+    if (config !== null) {
+        const encodedConfig = encodeURIComponent(JSON.stringify(config));
+        const configParam = "CONFIG=" + encodedConfig;
+        uriPath = uriPath + "?" + configParam;
     }
 
-    sendExportRequest(uriPath, filePath, config, header={})
-    {
-      header['User-Agent'] = 'MCP Server NPM Client: v1';
-      header.Authorization = 'Zoho-oauthtoken ' + this.accessToken;
+    const url = new URL('https://' + this.analyticsURI + uriPath);
 
-      if(config !== null)
-      {
-        var encodedConfig = encodeURIComponent(JSON.stringify(config));
-        var configParam = "CONFIG" + "=" + encodedConfig;
-        uriPath = uriPath + "?" + configParam;
-      }
-      const url = 'https://' + this.analyticsURI + uriPath;
-    return new Promise(function(resolve, reject) {
-        
-        // Old request-based implementation (commented out)
-        // var req = request.get({url:url,encoding: null,headers:header,secureProtocol: 'TLSv1_2_method'}, (err, resp, body)=> {
-        // if (err) 
-        // {
-        //     reject(JSON.parse(err));  
-        // } 
-        // else 
-        // {
-        //     if(resp.statusCode!==200)
-        //     {
-        //         let respJSON = (JSON.parse(body));
-        //         reject(respJSON.data)
-        //     }
-        //     else
-        //     {
-        //         fs.writeFileSync(filePath, body);
-        //         resolve();
-        //     }
-        // }
-        // });
+    return new Promise((resolve, reject) => {
+        const form = new FormData();
+        if (data !== null) {
+            form.append('DATA', data);
+        } else {
+            const fileStream = fs.createReadStream(filePath);
+            fileStream.on('error', reject);
+            form.append('FILE', fileStream);
+        }
 
-        // New axios-based implementation
-        const httpsAgent = new https.Agent({
-            secureProtocol: 'TLSv1_2_method'
-        });
-
-        axios.get(url, {
-            headers: header,
-            httpsAgent: httpsAgent,
-            responseType: 'arraybuffer'
-        })
-        .then(resp => {
-            if(resp.status !== 200) {
-                let respJSON = (JSON.parse(resp.data));
-                reject(respJSON.data);
-            } else {
-                fs.writeFileSync(filePath, resp.data);
-                resolve();
+        const options = {
+            method: 'POST',
+            hostname: url.hostname,
+            path: url.pathname + url.search,
+            headers: {
+                ...header,
+                ...form.getHeaders()
             }
-        })
-        .catch(err => {
-            if(err.response) {
-                if(err.response.status !== 200) {
-                    let respJSON = (JSON.parse(err.response.data));
+        };
+
+        const req = https.request(options, (res) => {
+            let responseData = '';
+            res.on('data', (chunk) => responseData += chunk);
+            res.on('end', () => {
+                const respJSON = JSON.parse(responseData);
+                if (res.statusCode !== 200) {
                     reject(respJSON.data);
                 } else {
-                    reject(err.message);
+                    resolve(respJSON.data);
                 }
-            } else {
-                reject(err.message);
-            }
+            });
         });
-      });
 
+        req.on('error', (err) => reject(JSON.parse(err)));
+        form.pipe(req);
+    });
+}
+
+async handleExportRequest(
+    uriPath,
+    config,
+    header,
+    { filePath = null, stream = false } = {}
+) {
+    if (this.accessToken == null) {
+        this.accessToken = await this.getOauth();
     }
 
-    async handleV2Request(uriPath, method, config, header, isExportReq = false)
-    {
-        if(this.accessToken == null)
-        {
+    try {
+        return await this.sendExportRequest(
+            uriPath,
+            config,
+            header,
+            { filePath, stream }
+        );
+    } catch (error) {
+        if (error.errorCode === '8535') {
             this.accessToken = await this.getOauth();
+            return await this.sendExportRequest(
+                uriPath,
+                config,
+                header,
+                { filePath, stream }
+            );
         }
-        return await this.sendV2Request(uriPath, method, config, header, isExportReq).catch(async error=>
-        {
-            if(error.errorCode == "8535")
-            {
-                this.accessToken = await this.getOauth();
-                return await this.sendV2Request(uriPath, method, config, header, isExportReq);
-            }
-            else
-            {
-                throw error;
-            }
-        });
+        throw error;
+    }
+}
+
+
+sendExportRequest(
+    uriPath,
+    config,
+    header = {},
+    { filePath = null, stream = false } = {}
+) {
+    header['User-Agent'] = 'MCP Server NPM Client: v1' + clientVersion;
+    header['Authorization'] = 'Zoho-oauthtoken ' + this.accessToken;
+
+    if (config) {
+        const encodedConfig = encodeURIComponent(JSON.stringify(config));
+        uriPath += '?CONFIG=' + encodedConfig;
     }
 
-    sendV2Request(uriPath, reqMethod, config, header={}, isExportReq = false)
-    {
-      header['User-Agent'] = 'MCP Server NPM Client: v1';
-      //header.Content-Type = 'application/x-www-form-urlencoded';
-      header.Authorization = 'Zoho-oauthtoken ' + this.accessToken;
+    return new Promise((resolve, reject) => {
+        const url = new URL('https://' + this.analyticsURI + uriPath);
 
-      if(config !== null &&  Object.keys(config).length !== 0)
-      {
-        var encodedConfig = encodeURIComponent(JSON.stringify(config));
-        var configParam = "CONFIG" + "=" + encodedConfig;
+        const options = {
+            method: 'GET',
+            hostname: url.hostname,
+            path: url.pathname + url.search,
+            headers: header
+        };
+
+        const req = https.request(options, (res) => {
+
+            // ---- ERROR PATH ----
+            if (!String(res.statusCode).startsWith('2')) {
+                let errorData = '';
+
+                res.setEncoding('utf8');
+                res.on('data', chunk => errorData += chunk);
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(errorData);
+                        reject(parsed.data || parsed);
+                    } catch {
+                        reject({
+                            errorCode: res.statusCode,
+                            errorMessage: errorData
+                        });
+                    }
+                });
+                return;
+            }
+
+            // ---- STREAM MODE ----
+            if (stream) {
+                resolve(res);
+                return;
+            }
+
+            // ---- FILE MODE ----
+            if (!filePath) {
+                reject(new Error('filePath is required when stream=false'));
+                return;
+            }
+
+            const fileStream = fs.createWriteStream(filePath);
+
+            res.pipe(fileStream);
+
+            fileStream.on('finish', () => resolve());
+            fileStream.on('error', reject);
+        });
+
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+
+async handleV2Request(uriPath, method, config, header, isExportReq = false) {
+    if (this.accessToken == null) {
+        this.accessToken = await this.getOauth();
+    }
+    return await this.sendV2Request(uriPath, method, config, header, isExportReq).catch(async error => {
+        if (error.errorCode == "8535") {
+            this.accessToken = await this.getOauth();
+            return await this.sendV2Request(uriPath, method, config, header, isExportReq);
+        } else {
+            throw error;
+        }
+    });
+}
+
+sendV2Request(uriPath, reqMethod, config, header = {}, isExportReq = false) {
+    header['User-Agent'] = 'MCP Server NPM Client: v1' + clientVersion;
+    header['Authorization'] = 'Zoho-oauthtoken ' + this.accessToken;
+
+    if (config !== null && Object.keys(config).length !== 0) {
+        const encodedConfig = encodeURIComponent(JSON.stringify(config));
+        const configParam = "CONFIG=" + encodedConfig;
         uriPath = uriPath + "?" + configParam;
+    }
 
-        //var contentLength = 'Content-Length';
-        //header[contentLength] = configParam.length;
-      }
-
-      var options = {
+    const options = {
         host: this.analyticsURI,
         path: uriPath,
         headers: header,
         method: reqMethod,
-        secureProtocol: 'TLSv1_2_method'
-      };
+    };
 
-    return new Promise(function(resolve, reject) {
-      var req = https.request(options, (resp) => 
-      {
-        let data = '';
-        resp.setEncoding(null);
-        resp.on('data', (chunk) => {
-        data += chunk;
-        });
-
-        resp.on('end', () => {
-
-          var respCode = (resp.statusCode).toString();
-          var isRequestFailed = Boolean(!respCode.startsWith('2'));
-          var hasResponse = Boolean(respCode === '200');
-          
-          if(isRequestFailed)
-          {
-            var respJSON = (JSON.parse(data));
-            reject(respJSON.data)
-          }
-          else if(isExportReq)
-          {
-            resolve(data);
-          }
-          else if(hasResponse)
-          {
-            var respJSON = (JSON.parse(data));
-            resolve(respJSON.data);
-          }
-          resolve();
-
-        });
-      }).on("error", (err) => 
-      {
-        reject(JSON.parse(err))
-      });
-
-      req.end();
-      });
-
-    }
-    
-    getOauth() 
-    {
-        var oauthinfo = {};
-        oauthinfo.client_id= this.clientId;
-        oauthinfo.client_secret= this.clientSecret;
-        oauthinfo.refresh_token= this.refreshToken;
-        oauthinfo.grant_type= 'refresh_token';
-
-        var encodedParams = querystring.stringify(oauthinfo);
-        var options = {
-          host: this.accountsURI,
-          path: '/oauth/v2/token',
-          headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'MCP Server NPM Client: v1',
-          'Content-Length': encodedParams.length
-          },
-          method: "POST",
-          secureProtocol: 'TLSv1_2_method'
-        };
-        
-        return new Promise(function(resolve, reject) {
-            
-            var req = https.request(options, (resp) => {
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, (resp) => {
             let data = '';
-            // A chunk of data has been recieved.
-            resp.on('data', (chunk) => {
-              data += chunk;
+            resp.on('data', (chunk) => data += chunk);
+            resp.on('end', () => {
+                const isFailed = !(resp.statusCode.toString().startsWith('2'));
+
+                // Handle empty body (204 or otherwise)
+                if (!data || data.trim().length === 0) {
+                    if (isFailed) {
+                        reject({ error: 'Empty response body', statusCode: resp.statusCode });
+                    } else {
+                        resolve(null);
+                    }
+                    return;
+                }
+                
+                if (isFailed) {
+                    const respJSON = JSON.parse(data);
+                    reject(respJSON.data);
+                } else if (isExportReq) {
+                    resolve(data);
+                } else {
+                    const respJSON = JSON.parse(data);
+                    resolve(respJSON.data);
+                }
             });
-
-              // The whole response has been received. Print out the result.
-              resp.on('end', () => {
-              var respJSON = (JSON.parse(data));
-
-              if(!respJSON.error)
-              {
-                resolve(respJSON.access_token);
-              }
-              else
-              {
-                var err = {};
-                err.errorCode = '0';
-                err.errorMessage = respJSON.error;
-                reject(err);
-              }
-
-              });
-
-            }).on("error", (err) => {
-              reject(err.message);
-            });
-            req.write(encodedParams);
-            req.end();
         });
-    }
+
+        req.on("error", (err) => reject(JSON.parse(err)));
+        req.end();
+    });
+}
+
+getOauth() {
+    const oauthinfo = {
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: this.refreshToken,
+        grant_type: 'refresh_token'
+    };
+
+    const encodedParams = querystring.stringify(oauthinfo);
+
+    const options = {
+        host: this.accountsURI,
+        path: '/oauth/v2/token',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'MCP Server NPM Client: v1' + clientVersion,
+            'Content-Length': Buffer.byteLength(encodedParams)
+        },
+        method: "POST"
+    };
+
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, (resp) => {
+            let data = '';
+            resp.on('data', (chunk) => data += chunk);
+            resp.on('end', () => {
+                const respJSON = JSON.parse(data);
+                if (!respJSON.error) {
+                    resolve(respJSON.access_token);
+                } else {
+                    reject({ errorCode: '0', errorMessage: respJSON.error });
+                }
+            });
+        });
+
+        req.on("error", (err) => reject(err.message));
+        req.write(encodedParams);
+        req.end();
+    });
+}
+
   
 };
 
@@ -898,6 +837,18 @@ class OrgAPI
         return result;
     }
 
+    /**
+     * Returns all the automl analysis available in an organization.
+     * @method getAutomlAnalysis
+     * @returns {Array} AutoML analysis list.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async getAutomlAnalysis() {
+        var uriPath = "/restapi/v2/automl/analysis";
+        var result = await this.ac.handleV2Request(uriPath, "GET", null, this.header);
+        return result.analysis;
+    }
+
 }
 
 class WorkspaceAPI
@@ -910,6 +861,7 @@ class WorkspaceAPI
         this.header = {};
         this.header['ZANALYTICS-ORGID'] = orgId;
         this.orgId = orgId;
+        this.workspaceId = workspaceId;
     }
 
     /**
@@ -1672,7 +1624,12 @@ class WorkspaceAPI
     {
         var uriPath = this.uriPath + "/template/data";
         config.viewIds = viewIds;
-        await this.ac.handleExportRequest(uriPath, filePath, config, this.header);
+        await this.ac.handleExportRequest(
+            uriPath,
+            config,
+            this.header,
+            { filePath: filePath }
+        );
     }
 
     /**
@@ -1896,6 +1853,237 @@ class WorkspaceAPI
         var uriPath = this.uriPath + "/reports/" + viewId;
         await this.ac.handleV2Request(uriPath, "PUT", config, this.header);
     }
+
+    /**
+     * Returns details of the specified query table.
+     * @method getQueryTableDetails
+     * @param {String} queryTableId - Id of the query table.
+     * @returns {Object} View details.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async getQueryTableDetails(queryTableId) {
+        var uriPath = this.uriPath + "/querytables/" + queryTableId;
+        var result = await this.ac.handleV2Request(uriPath, "GET", null, this.header);
+        return result;
+    }
+
+    /**
+     * Returns list of automl analysis for the specified workspace.
+     * @method getAutomlAnalysis
+     * @returns {Array} AutoML analysis list.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async getAutomlAnalysis() {
+        var uriPath = "/restapi/v2/automl/workspaces/" + this.workspaceId + "/analysis";
+        var result = await this.ac.handleV2Request(uriPath, "GET", null, this.header);
+        return result.analysis;
+    }
+
+    /**
+     * Retrieve detailed information for a specific AutoML analysis.
+     * @method getAutomlAnalysisDetails
+     * @param {String} analysisId - Id of the Automl Analysis.
+     * @returns {Object} AutoML analysis details.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async getAutomlAnalysisDetails(analysisId) {
+        var uriPath = "/restapi/v2/automl/workspaces/" + this.workspaceId + "/analysis/" + analysisId;
+        var result = await this.ac.handleV2Request(uriPath, "GET", null, this.header);
+        return result.analysis;
+    }
+
+    /**
+     * Returns deployment details available for a AutoML analysis model.
+     * @method getDeploymentDetails
+     * @param {String} analysisId - Id of the Automl Analysis.
+     * @param {String} modelId - Id of the Automl Analysis Model.
+     * @returns {Array} AutoML analysis deployment details.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async getDeploymentDetails(analysisId, modelId) {
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis/" + analysisId +
+                    "/models/" + modelId +
+                    "/deployments";
+
+        var result = await this.ac.handleV2Request(uriPath, "GET", null, this.header);
+        return result.deployments;
+    }
+
+    /**
+     * Create a new AutoML analysis within the provided workspace.
+     * @method createAutomlAnalysis
+     * @param {String} name - Name for the automl analysis to be created.
+     * @param {String} trainingTableId - Id of the training table.
+     * @param {String} predictionType - REGRESSION / CLASSIFICATION / CLUSTERING.
+     * @param {Array} features - List of column names used as features.
+     * @param {Number} serverOption - 1 → 8GB, 2 → 16GB, 3 → 32GB.
+     * @param {Object} algorithms - Algorithms configuration.
+     * @param {Object} config={} - Additional control attributes.
+     * @returns {String} Created AutoML Analysis Id.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async createAutomlAnalysis(
+        name,
+        trainingTableId,
+        predictionType,
+        features,
+        serverOption,
+        algorithms,
+        config = {}
+    ) {
+        config.name = name;
+        config.trainingTableId = trainingTableId;
+        config.predictionType = predictionType;
+        config.features = features;
+        config.serverOption = serverOption;
+        config.algorithms = algorithms;
+
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis";
+
+        var result = await this.ac.handleV2Request(uriPath, "POST", config, this.header);
+        return String(result.id);
+    }
+
+    /**
+     * Delete a specified automl analysis from the given workspace.
+     * @method deleteAutomlAnalysis
+     * @param {String} analysisId - Id of the Automl Analysis to be deleted.
+     * @param {Object} config={} - Additional control attributes.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async deleteAutomlAnalysis(analysisId, config = {}) {
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis/" + analysisId;
+
+        await this.ac.handleV2Request(uriPath, "DELETE", config, this.header);
+    }
+
+    /**
+     * Delete a specified model available in the given automl analysis.
+     * @method deleteAutomlAnalysisModel
+     * @param {String} analysisId - Id of the Automl Analysis.
+     * @param {String} modelId - Id of the model to be deleted.
+     * @param {Object} config={} - Additional control attributes.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async deleteAutomlAnalysisModel(analysisId, modelId, config = {}) {
+
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis/" + analysisId +
+                    "/models/" + modelId;
+
+        await this.ac.handleV2Request(uriPath, "DELETE", config, this.header);
+    }
+
+    /**
+     * Deploy the AutoML analysis model.
+     * @method createAutomlAnalysisDeployment
+     * @returns {Array} Created AutoML Deployment details.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async createAutomlAnalysisDeployment(
+        analysisId,
+        modelId,
+        inputTableId,
+        outputTable,
+        outputColumns,
+        predictionColumn,
+        serverOption,
+        importType,
+        scheduleDetails,
+        config = {}
+    ) {
+
+        config.inputTableId = inputTableId;
+        config.outputTable = outputTable;
+        config.outputColumns = outputColumns;
+        config.predictionColumn = predictionColumn;
+        config.serverOption = serverOption;
+        config.importType = importType;
+
+        if (scheduleDetails == null) {
+            scheduleDetails = "none";
+        }
+
+        config.scheduleDetails = scheduleDetails;
+
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis/" + analysisId +
+                    "/models/" + modelId +
+                    "/deployments";
+
+        var result = await this.ac.handleV2Request(uriPath, "POST", config, this.header);
+        return result.deployments;
+    }
+
+    /**
+     * Execute the AutoML analysis deployment.
+     * @method deployAutomlAnalysis
+     * @param {String} analysisId - Id of the Automl Analysis.
+     * @param {String} deploymentId - Id of the deployment to be executed.
+     * @param {Object} config={} - Additional control attributes.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async deployAutomlAnalysis(analysisId, deploymentId, config = {}) {
+
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis/" + analysisId +
+                    "/deployments/" + deploymentId +
+                    "/execute";
+
+        await this.ac.handleV2Request(uriPath, "POST", config, this.header);
+    }
+
+    /**
+     * Delete the AutoML analysis deployment.
+     * @method deleteAutomlAnalysisDeployment
+     * @param {String} analysisId - Id of the Automl Analysis.
+     * @param {String} deploymentId - Id of the deployment to be deleted.
+     * @param {Object} config={} - Additional control attributes.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async deleteAutomlAnalysisDeployment(analysisId, deploymentId, config = {}) {
+
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis/" + analysisId +
+                    "/deployments/" + deploymentId;
+
+        await this.ac.handleV2Request(uriPath, "DELETE", config, this.header);
+    }
+
+    /**
+     * Get predictions by providing sample input values for a trained model.
+     * @method automlAnalysisPrediction
+     * @param {String} analysisId - Id of the Automl Analysis.
+     * @param {String} modelId - Id of the Automl Analysis model.
+     * @param {Object} features - Column → value map for prediction.
+     * @param {Object} config={} - Additional control attributes.
+     * @returns {Object} Prediction result.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async automlAnalysisPrediction(analysisId, modelId, features, config = {}) {
+
+        config.features = features;
+
+        var uriPath = "/restapi/v2/automl/workspaces/" +
+                    this.workspaceId +
+                    "/analysis/" + analysisId +
+                    "/models/" + modelId +
+                    "/whatif";
+
+        var result = await this.ac.handleV2Request(uriPath, "POST", config, this.header);
+        return result;
+    }
+
 
 }
 
@@ -2482,6 +2670,56 @@ class ViewAPI
         await this.ac.handleV2Request(uriPath, "PUT", config, this.header);
     }
 
+    /**
+     * Retrieves metadata information for the current table, including
+     * the list of available columns and associated attributes.
+     * @method getTableMetadata
+     * @returns {Object} Table metadata details.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async getTableMetadata() {
+        var uriPath = this.uriPath + "/metadata";
+        var result = await this.ac.handleV2Request(uriPath, "GET", null, this.header);
+        return result;
+    }
+
+    /**
+     * Updates the column order of the current table.
+     * @method reorderColumns
+     * @param {Array} columnIds - Full set of column IDs in the new order.
+     * @param {Object} config={} - Additional control attributes.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async reorderColumns(columnIds, config = {}) {
+        var uriPath = this.uriPath + "/columns/reorder";
+        config.columns = columnIds;
+        await this.ac.handleV2Request(uriPath, "PUT", config, this.header);
+    }
+
+
+    /**
+     * Sorts the data in the table based on the specified columns.
+     * @method sortDataByColumns
+     * @param {Array|null} columns - List of column IDs to sort by.
+     * @param {Number|null} sortOrder - 1 for ascending, 2 for descending.
+     * @param {Boolean} resetSort - If true, resets existing sort.
+     * @param {Object} config={} - Additional control attributes.
+     * @throws {Error} If the request failed due to some error.
+     */
+    async sortDataByColumns(columns = null, sortOrder = null, resetSort = false, config = {}) {
+
+        var uriPath = this.uriPath + "/data/sort";
+
+        if (resetSort) {
+            config.resetSort = "true";
+        } else {
+            config.sortOrder = sortOrder;
+            config.columns = columns;
+        }
+
+        await this.ac.handleV2Request(uriPath, "PUT", config, this.header);
+    }
+
 }
 
 class BulkAPI
@@ -2702,8 +2940,34 @@ class BulkAPI
     {
         var uriPath = this.uriPath + "/views/" + viewId + "/data";
         config.responseFormat = responseFormat;
-        await this.ac.handleExportRequest(uriPath, filePath, config, this.header);
+        await this.ac.handleExportRequest(
+            uriPath,
+            config,
+            this.header,
+            { filePath: filePath }
+        );
     }
+
+    /**
+     * Export the mentioned table (or) view data as a stream.
+     *
+     * @param {String} viewId - Id of the view to be exported
+     * @param {String} responseFormat - Export format (csv, xls, json, etc.)
+     * @param {Object} config - Additional control parameters (optional)
+     * @returns {Promise<ReadableStream>} - Stream containing exported data
+     */
+    async exportDataStream(viewId, responseFormat, config = {}) {
+        var uriPath = this.uriPath + "/views/" + viewId + "/data";
+        config.responseFormat = responseFormat;
+
+        return await this.ac.handleExportRequest(
+            uriPath,
+            config,
+            this.header,
+            { stream: true }
+        );
+    }
+
 
     /**
      * Initiate asynchronous export for the mentioned table (or) view data.
@@ -2764,10 +3028,35 @@ class BulkAPI
     async exportBulkData(jobId, filePath)
     {
         var uriPath = this.bulkUriPath + "/exportjobs/" + jobId + "/data";
-        await this.ac.handleExportRequest(uriPath, filePath, null, this.header);
+
+        await this.ac.handleExportRequest(
+            uriPath,
+            null,
+            this.header,
+            { filePath: filePath }
+        );
     }
+
+    /**
+     * Download the exported bulk data for the given job id as a stream.
+     *
+     * @param {String} jobId - Export job id
+     * @returns {Promise<ReadableStream>} - Stream containing exported data
+     */
+    async exportBulkDataStream(jobId) {
+        const uriPath = this.bulkUriPath + '/exportjobs/' + jobId + '/data';
+
+        return await this.ac.handleExportRequest(
+            uriPath,
+            null,
+            this.header,
+            { stream: true }
+        );
+    }
+
 
 }
 
 
 module.exports = AnalyticsClient;
+

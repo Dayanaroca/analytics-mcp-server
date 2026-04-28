@@ -22,6 +22,7 @@ export function registerRowTools(server: ServerInstance) {
         },
         annotations: {
           title: "Add Row",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false
@@ -58,6 +59,7 @@ export function registerRowTools(server: ServerInstance) {
         },
         annotations: {
           title: "Delete Rows",
+          readOnlyHint: false,
           destructiveHint: true,
           idempotentHint: false,
           openWorldHint: false
@@ -95,6 +97,7 @@ export function registerRowTools(server: ServerInstance) {
         },
         annotations: {
           title: "Update Rows",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: true, //Update is considered idempotent because we expect the input to be the desired final value of the row(s). There is no scope for updating based on current value of the row, which may lead to non-idempotency.
           openWorldHint: false

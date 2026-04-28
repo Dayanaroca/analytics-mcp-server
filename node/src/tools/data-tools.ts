@@ -38,6 +38,7 @@ export function registerDataTools(server: ServerInstance) {
         },
         annotations: {
           title: "Query Data",
+          readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false
@@ -115,6 +116,7 @@ export function registerDataTools(server: ServerInstance) {
         },
         annotations: {
           title: "Analyze File Structure",
+          readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,
           openWorldHint: false
@@ -231,6 +233,7 @@ export function registerDataTools(server: ServerInstance) {
         },
         annotations: {
           title: "Export View",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: true,
           openWorldHint: false
@@ -314,6 +317,7 @@ export function registerDataTools(server: ServerInstance) {
         },
         annotations: {
           title: "Download File",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: true
@@ -380,6 +384,7 @@ export function registerDataTools(server: ServerInstance) {
         },
         annotations: {
           title: "Import Data",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false

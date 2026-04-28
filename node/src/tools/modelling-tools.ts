@@ -14,6 +14,7 @@ export function registerModellingTools(server: ServerInstance) {
         },
         annotations: {
           title: "Create Workspace",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false
@@ -56,6 +57,7 @@ export function registerModellingTools(server: ServerInstance) {
         },
         annotations: {
           title: "Create Table",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false
@@ -214,6 +216,7 @@ export function registerModellingTools(server: ServerInstance) {
     },
     annotations: {
       title: "Create Chart Report",
+      readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
       openWorldHint: false
@@ -385,6 +388,7 @@ export function registerModellingTools(server: ServerInstance) {
         },
         annotations: {
           title: "Create Summary Report",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false
@@ -515,6 +519,7 @@ export function registerModellingTools(server: ServerInstance) {
         },
         annotations: {
           title: "Create Pivot Report",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false
@@ -592,6 +597,7 @@ export function registerModellingTools(server: ServerInstance) {
         },
         annotations: {
           title: "Create Query Table",
+          readOnlyHint: false,
           destructiveHint: false,
           idempotentHint: false,
           openWorldHint: false
@@ -628,6 +634,7 @@ export function registerModellingTools(server: ServerInstance) {
       },
       annotations: {
         title: "Delete View",
+        readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: false,
         openWorldHint: false

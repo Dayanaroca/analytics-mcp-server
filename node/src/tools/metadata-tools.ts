@@ -120,6 +120,7 @@ export function registerMetaDataTools(server: ServerInstance) {
       },
       annotations: {
         title: "Get Workspaces List",
+        readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false
@@ -167,6 +168,7 @@ export function registerMetaDataTools(server: ServerInstance) {
       },
       annotations: {
         title: "Get View Details",
+        readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false
@@ -250,6 +252,7 @@ export function registerMetaDataTools(server: ServerInstance) {
     },
     annotations: {
       title: "Search Views",
+      readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false

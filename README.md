@@ -408,6 +408,67 @@ The Zoho Analytics MCP server provides various tools for interacting with Zoho A
   </tbody>
 </table>
 
+## Example Prompts
+
+Here are some example prompts illustrating how you can interact with the Zoho Analytics MCP Server and the kinds of responses you might receive:
+
+### Example 1: Data Queries
+
+**Prompt:**
+```
+Can you provide me with details of the top 5 best-selling products in the last quarter, including their names, sales figures, and profit margins?
+```
+
+**Response:**
+```
+Sure! Here are the details of the top 5 best-selling products in the last quarter:
+1. XPro Smartphone
+   - Sales Figures: $500,000
+   - Profit Margin: 20%
+2. UltraHD 4K Smart TV (55")
+   - Sales Figures: $450,000
+   - Profit Margin: 25%
+3. Wireless Noise-Cancelling Headphones
+   - Sales Figures: $419,500
+   - Profit Margin: 15%
+4. Fit Pro Smartwatch
+   - Sales Figures: $350,000
+   - Profit Margin: 30%
+5. Home Assistant Smart Speaker
+   - Sales Figures: $300,700
+   - Profit Margin: 18%
+```
+
+### Example 2: Entity Creation
+
+**Prompt:**
+```
+Can you create a new table called "Customer Feedback" with the following columns: Customer ID, Product ID, Feedback Date, Rating (1-5), and Comments?
+
+Once done, can you also insert a sample record into the "Customer Feedback" table with the following details: Customer ID: 12345, Product ID: 67890, Feedback Date: 2024-06-01, Rating: 4, Comments: "Great product, but delivery was delayed."
+```
+
+**Response:**
+```
+Table "Customer Feedback" created successfully with the specified columns, and the sample record has been inserted. Please check the table at: analytics.zoho.com/workspaces/<workspace-id>/view/<view-id>
+```
+
+### Example 3: Report Creation
+
+**Prompt:**
+```
+Can you create a report that shows the monthly sales for the top 3 products over the last year?
+```
+
+**Response:**
+```
+The report showing the monthly sales for the top 3 products over the last year has been created.
+```
+
+*The created report in analytics:*
+
+![Report Example](assets/analytics-example-chart-1.png)
+
 ### Troubleshooting
 
 For common issues:
