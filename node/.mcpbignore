@@ -1,4 +1,5 @@
 .env
-dist/
+src/
 *.mcpb
+.mcpbignore
 docker-compose.dev.yaml

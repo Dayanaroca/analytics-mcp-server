@@ -11,6 +11,13 @@ export function registerModellingTools(server: ServerInstance) {
         description: "Create a new workspace in Zoho Analytics with the given name",
         inputSchema: { 
         workspaceName: z.string().describe("Name of the workspace to create")
+        },
+        annotations: {
+          title: "Create Workspace",
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceName }) => {
@@ -47,6 +54,13 @@ export function registerModellingTools(server: ServerInstance) {
                 DATATYPE: z.enum(["PLAIN", "NUMBER", "DATE"]).describe("The data type of the column")
             })).describe("A list of column definitions for the table"),
             orgId: z.string().optional().describe("The ID of the organization to which the workspace belongs. Defaults to config.ORGID if not provided.")
+        },
+        annotations: {
+          title: "Create Table",
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableName, columns_arr, orgId }) => {
@@ -200,6 +214,13 @@ export function registerModellingTools(server: ServerInstance) {
         .string()
         .optional(),
     },
+    annotations: {
+      title: "Create Chart Report",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false
+    }
   },
   async ({
     workspace_id,
@@ -364,6 +385,13 @@ export function registerModellingTools(server: ServerInstance) {
                 exclude: z.boolean()
             })).optional(),
             orgId: z.string().optional()
+        },
+        annotations: {
+          title: "Create Summary Report",
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableName, reportName, summaryDetails, filters, orgId }) => {
@@ -488,6 +516,13 @@ export function registerModellingTools(server: ServerInstance) {
             exclude: z.boolean()
         })).optional(),
         orgId: z.string().optional()
+        },
+        annotations: {
+          title: "Create Pivot Report",
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableName, reportName, pivotDetails, filters, orgId }) => {
@@ -559,6 +594,13 @@ export function registerModellingTools(server: ServerInstance) {
         tableName: z.string().describe("The name of the query table to create"),
         query: z.string().describe("The SQL select query to create the query table"),
         orgId: z.string().optional().describe("The ID of the organization to which the workspace belongs. Defaults to config.ORGID if not provided.")
+        },
+        annotations: {
+          title: "Create Query Table",
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableName, query, orgId }) => {
@@ -590,6 +632,13 @@ export function registerModellingTools(server: ServerInstance) {
         view_id: z.string(),
         org_id: z.string().nullable().optional(),
       },
+      annotations: {
+        title: "Delete View",
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false
+      }
     },
     async ({ workspace_id, view_id, org_id }) => {
         try {

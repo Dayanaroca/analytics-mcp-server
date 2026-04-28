@@ -19,6 +19,13 @@ export function registerRowTools(server: ServerInstance) {
             tableId: z.string().describe("The ID of the table to which the row will be added"),
             columns: z.record(z.string(), z.string()).describe("A dictionary containing the column names and their corresponding values for the new row"),
             orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+        },
+        annotations: {
+          title: "Add Row",
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableId, columns, orgId }) => {
@@ -49,6 +56,13 @@ export function registerRowTools(server: ServerInstance) {
             tableId: z.string().describe("The ID of the table from which rows will be deleted"),
             criteria: z.string().describe("A string representing the criteria for selecting rows to delete. Example criteria: \"\\\"SalesTable\\\".\\\"Region\\\"='East'\""),
             orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+        },
+        annotations: {
+          title: "Delete Rows",
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableId, criteria, orgId }) => {
@@ -80,6 +94,13 @@ export function registerRowTools(server: ServerInstance) {
             columns: z.record(z.string(), z.string()).describe("A dictionary containing the column names and their new values for the update"),
             criteria: z.string().describe("A string representing the criteria for selecting rows to update. Example criteria: \"\\\"SalesTable\\\".\\\"Region\\\"='East'\""),
             orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+        },
+        annotations: {
+          title: "Update Rows",
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true, //Update is considered idempotent because we expect the input to be the desired final value of the row(s). There is no scope for updating based on current value of the row, which may lead to non-idempotency.
+          openWorldHint: false
         }
     },
     async ({ workspaceId, tableId, columns, criteria, orgId }) => {

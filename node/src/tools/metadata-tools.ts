@@ -117,6 +117,13 @@ export function registerMetaDataTools(server: ServerInstance) {
       inputSchema: {
         include_shared_workspaces: z.boolean().describe("If True, includes shared workspaces in the list"),
         contains_str: z.string().optional().describe("Optional string to filter workspaces with a contains criteria")
+      },
+      annotations: {
+        title: "Get Workspaces List",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
       }
     },
     async ({ include_shared_workspaces, contains_str }) => {
@@ -158,6 +165,13 @@ export function registerMetaDataTools(server: ServerInstance) {
       `,
       inputSchema: {
           view_id: z.string().describe("The ID of the view for which to fetch details")
+      },
+      annotations: {
+        title: "Get View Details",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
       }
   },
   async ({ view_id }) => {
@@ -236,6 +250,13 @@ export function registerMetaDataTools(server: ServerInstance) {
       allowedViewTypesIds: z.array(z.number()).optional(),
       orgId: z.string().nullable().optional(),
     },
+    annotations: {
+      title: "Search Views",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    }
   },
   async ({ workspaceId, natural_language_query, view_contains_str, allowedViewTypesIds, orgId }) => {
     try {
