@@ -15,10 +15,10 @@ export function registerRowTools(server: ServerInstance) {
         </use_case>
         `,
         inputSchema: {
-            workspaceId: z.string().describe("The ID of the workspace where the table is located"),
-            tableId: z.string().describe("The ID of the table to which the row will be added"),
+            workspace_id: z.string().describe("The ID of the workspace where the table is located"),
+            table_id: z.string().describe("The ID of the table to which the row will be added"),
             columns: z.record(z.string(), z.string()).describe("A dictionary containing the column names and their corresponding values for the new row"),
-            orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+            org_id: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
         },
         annotations: {
           title: "Add Row",
@@ -28,17 +28,17 @@ export function registerRowTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableId, columns, orgId }) => {
+    async ({ workspace_id, table_id, columns, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace, table, cols) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, table, cols) => {
                 const analyticsClient = getAnalyticsClient();
-                const view = analyticsClient.getViewInstance(orgId || "", workspace, table);
+                const view = analyticsClient.getViewInstance(org_id || "", workspace, table);
                 await view.addRow(cols);
                 return ToolResponse("Row added successfully.");
-            },workspaceId, tableId, columns);         
+            },workspace_id, table_id, columns);
         } catch (err) {
             return logAndReturnError(err, "Error while adding row");
         }
@@ -52,10 +52,10 @@ export function registerRowTools(server: ServerInstance) {
         </use_case>
         `,
         inputSchema: {
-            workspaceId: z.string().describe("The ID of the workspace where the table is located"),
-            tableId: z.string().describe("The ID of the table from which rows will be deleted"),
+            workspace_id: z.string().describe("The ID of the workspace where the table is located"),
+            table_id: z.string().describe("The ID of the table from which rows will be deleted"),
             criteria: z.string().describe("A string representing the criteria for selecting rows to delete. Example criteria: \"\\\"SalesTable\\\".\\\"Region\\\"='East'\""),
-            orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+            org_id: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
         },
         annotations: {
           title: "Delete Rows",
@@ -65,17 +65,17 @@ export function registerRowTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableId, criteria, orgId }) => {
+    async ({ workspace_id, table_id, criteria, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace, table, crit) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, table, crit) => {
                 const analyticsClient = getAnalyticsClient();
-                const view = analyticsClient.getViewInstance(orgId || "", workspace, table);
+                const view = analyticsClient.getViewInstance(org_id || "", workspace, table);
                 await view.deleteRow(crit);
                 return ToolResponse("Rows deleted successfully.");
-            }, workspaceId, tableId, criteria);
+            }, workspace_id, table_id, criteria);
         } catch (err) {
             return logAndReturnError(err, "Error while deleting rows");
         }
@@ -89,11 +89,11 @@ export function registerRowTools(server: ServerInstance) {
         </use_case>
         `,
         inputSchema: {
-            workspaceId: z.string().describe("The ID of the workspace where the table is located"),
-            tableId: z.string().describe("The ID of the table to be updated"),
+            workspace_id: z.string().describe("The ID of the workspace where the table is located"),
+            table_id: z.string().describe("The ID of the table to be updated"),
             columns: z.record(z.string(), z.string()).describe("A dictionary containing the column names and their new values for the update"),
             criteria: z.string().describe("A string representing the criteria for selecting rows to update. Example criteria: \"\\\"SalesTable\\\".\\\"Region\\\"='East'\""),
-            orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+            org_id: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
         },
         annotations: {
           title: "Update Rows",
@@ -103,17 +103,17 @@ export function registerRowTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableId, columns, criteria, orgId }) => {
+    async ({ workspace_id, table_id, columns, criteria, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace, table, crit, cols) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, table, crit, cols) => {
                 const analyticsClient = getAnalyticsClient();
-                const view = analyticsClient.getViewInstance(orgId, workspace, table);
+                const view = analyticsClient.getViewInstance(org_id, workspace, table);
                 await view.updateRow(cols, crit);
                 return ToolResponse("Rows updated successfully.");
-            }, workspaceId, tableId, criteria, columns);            
+            }, workspace_id, table_id, criteria, columns);
         } catch (err) {
             return logAndReturnError(err, "Error while updating rows");
         }

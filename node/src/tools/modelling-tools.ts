@@ -9,8 +9,8 @@ export function registerModellingTools(server: ServerInstance) {
     server.registerTool("create_workspace",
     {
         description: "Create a new workspace in Zoho Analytics with the given name",
-        inputSchema: { 
-        workspaceName: z.string().describe("Name of the workspace to create")
+        inputSchema: {
+        workspace_name: z.string().describe("Name of the workspace to create")
         },
         annotations: {
           title: "Create Workspace",
@@ -20,13 +20,13 @@ export function registerModellingTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceName }) => {
+    async ({ workspace_name }) => {
         try {
             const ac = getAnalyticsClient();
             const org = ac.getOrgInstance(config.ORGID || "");
             const configParam = {};
-            const workspaceId = await org.createWorkspace(workspaceName, configParam);
-            return ToolResponse(`Workspace '${workspaceName}' created successfully. Workspace Id: ${workspaceId}`);
+            const workspace_id = await org.createWorkspace(workspace_name, configParam);
+            return ToolResponse(`Workspace '${workspace_name}' created successfully. Workspace Id: ${workspace_id}`);
         } catch (err) {
             if (
                 typeof err === "object" &&
@@ -46,14 +46,14 @@ export function registerModellingTools(server: ServerInstance) {
     server.registerTool("create_table",
     {
         description: "Create a new table in the given workspace with the given name",
-        inputSchema: { 
-            workspaceId: z.string().describe("The ID of the workspace in which to create the table"),
-            tableName: z.string().describe("The name of the table to create"),
+        inputSchema: {
+            workspace_id: z.string().describe("The ID of the workspace in which to create the table"),
+            table_name: z.string().describe("The name of the table to create"),
             columns_arr: z.array(z.object({
                 COLUMNNAME: z.string().describe("The name of the column"),
                 DATATYPE: z.enum(["PLAIN", "NUMBER", "DATE"]).describe("The data type of the column")
             })).describe("A list of column definitions for the table"),
-            orgId: z.string().optional().describe("The ID of the organization to which the workspace belongs. Defaults to config.ORGID if not provided.")
+            org_id: z.string().optional().describe("The ID of the organization to which the workspace belongs. Defaults to config.ORGID if not provided.")
         },
         annotations: {
           title: "Create Table",
@@ -63,12 +63,12 @@ export function registerModellingTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableName, columns_arr, orgId }) => {
+    async ({ workspace_id, table_name, columns_arr, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace, tableAlias, cols_arr) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, tableAlias, cols_arr) => {
                 const tableDesign = {
                     TABLENAME: tableAlias,
                     COLUMNS: cols_arr
@@ -76,8 +76,8 @@ export function registerModellingTools(server: ServerInstance) {
                 const analyticsClient = getAnalyticsClient();
                 const workspaceInst = analyticsClient.getWorkspaceInstance(config.ORGID || "", workspace);
                 const tableId = await workspaceInst.createTable(tableDesign);
-                return ToolResponse(`Table '${tableName}' created successfully. Table Id: ${tableId}`);
-            }, workspaceId, tableName, columns_arr);
+                return ToolResponse(`Table '${table_name}' created successfully. Table Id: ${tableId}`);
+            }, workspace_id, table_name, columns_arr);
         } catch (err) {
             return logAndReturnError(err, "An error occurred while creating the table");
         }
@@ -210,31 +210,31 @@ export function registerModellingTools(server: ServerInstance) {
           })
         )
         .optional(),
-      orgId: z
-        .string()
-        .optional(),
-    },
-    annotations: {
-      title: "Create Chart Report",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false
-    }
-  },
-  async ({
-    workspace_id,
-    table_name,
-    chart_name,
-    chart_details,
-    filters,
-    orgId,
-    }) => {
-    
-    try {
-        if (!orgId) {
-            orgId = config.ORGID || "";
-        }
+      org_id: z
+         .string()
+         .optional(),
+     },
+     annotations: {
+       title: "Create Chart Report",
+       readOnlyHint: false,
+       destructiveHint: false,
+       idempotentHint: false,
+       openWorldHint: false
+     }
+   },
+   async ({
+     workspace_id,
+     table_name,
+     chart_name,
+     chart_details,
+     filters,
+     org_id,
+     }) => {
+     
+     try {
+         if (!org_id) {
+             org_id = config.ORGID || "";
+         }
         if (!chart_details.chartType) {
             return ToolResponse("Chart type is required. Please provide 'chartType' in chart_details.");
         }
@@ -282,12 +282,12 @@ export function registerModellingTools(server: ServerInstance) {
             }
             conf.filters = filters;
         }
-        return await retryWithFallback([orgId], workspace_id, "WORKSPACE", async (orgId, workspace) => {
-            const ac = getAnalyticsClient();
-            const workspaceInst = ac.getWorkspaceInstance(orgId || "", workspace);
-            const reportId = await workspaceInst.createReport(conf);
-            return ToolResponse(`Chart report created successfully. Report ID: ${reportId}`);
-        }, workspace_id);
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace) => {
+                const ac = getAnalyticsClient();
+                const workspaceInst = ac.getWorkspaceInstance(org_id || "", workspace);
+                const reportId = await workspaceInst.createReport(conf);
+                return ToolResponse(`Chart report created successfully. Report ID: ${reportId}`);
+            }, workspace_id);
     } catch (error: any) {
         if (typeof error.message === "string" && error.message.includes("Invalid input") && error.message.includes("operation") && error.message.includes("actual")) {
             return logAndReturnError("Invalid operation 'actual' for numeric column. Use 'sum' or 'count' instead.", "Chart creation error");
@@ -361,10 +361,10 @@ export function registerModellingTools(server: ServerInstance) {
         - str: Chart creation status or error message.
         `,
         inputSchema: {
-            workspaceId: z.string(),
-            tableName: z.string(),
-            reportName: z.string(),
-            summaryDetails: z.object({
+            workspace_id: z.string(),
+            table_name: z.string(),
+            report_name: z.string(),
+            summary_details: z.object({
                 group_by: z.array(z.object({
                     columnName: z.string(),
                     tableName: z.string(),
@@ -384,7 +384,7 @@ export function registerModellingTools(server: ServerInstance) {
                 values: z.array(z.string()),
                 exclude: z.boolean()
             })).optional(),
-            orgId: z.string().optional()
+            org_id: z.string().optional()
         },
         annotations: {
           title: "Create Summary Report",
@@ -394,16 +394,16 @@ export function registerModellingTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableName, reportName, summaryDetails, filters, orgId }) => {
+    async ({ workspace_id, table_name, report_name, summary_details, filters, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            if (!summaryDetails.group_by || !summaryDetails.aggregate) {
+            if (!summary_details.group_by || !summary_details.aggregate) {
                 return ToolResponse("Both 'group_by' and 'aggregate' must be provided in summary_details.");
             }
             const axisColumns: any[] = [];
-            for (const gb of summaryDetails.group_by) {
+            for (const gb of summary_details.group_by) {
                 axisColumns.push({
                     type: "groupBy",
                     columnName: gb.columnName,
@@ -411,7 +411,7 @@ export function registerModellingTools(server: ServerInstance) {
                     tableName: gb.tableName
                 });
             }
-            for (const ag of summaryDetails.aggregate) {
+            for (const ag of summary_details.aggregate) {
                 if (ag.operation === "actual") {
                     return ToolResponse("Invalid operation 'actual' in aggregate. Use 'sum', 'count', etc.");
                 }
@@ -423,20 +423,20 @@ export function registerModellingTools(server: ServerInstance) {
                 });
             }
             const conf: any = {
-                baseTableName: tableName,
-                title: reportName,
+                baseTableName: table_name,
+                title: report_name,
                 reportType: "summary",
                 axisColumns
             };
             if (filters) {
                 conf.filters = filters;
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace) => {
                 const analyticsClient = getAnalyticsClient();
-                const workspaceInst = analyticsClient.getWorkspaceInstance(orgId || "", workspace);
+                const workspaceInst = analyticsClient.getWorkspaceInstance(org_id || "", workspace);
                 const reportId = await workspaceInst.createReport(conf);
                 return ToolResponse(`Summary report created successfully. Report ID: ${reportId}`);
-            },workspaceId);
+            },workspace_id);
         } catch (err) {
             return logAndReturnError(err, "An error occurred while creating the summary report");
         }
@@ -487,10 +487,10 @@ export function registerModellingTools(server: ServerInstance) {
         - exclude (bool): Whether to exclude or include the filtered values. Default is False.
         `,
         inputSchema: {
-        workspaceId: z.string(),
-        tableName: z.string(),
-        reportName: z.string(),
-        pivotDetails: z.object({
+        workspace_id: z.string(),
+        table_name: z.string(),
+        report_name: z.string(),
+        pivot_details: z.object({
             row: z.array(z.object({
             columnName: z.string(),
             tableName: z.string(),
@@ -515,7 +515,7 @@ export function registerModellingTools(server: ServerInstance) {
             values: z.array(z.string()),
             exclude: z.boolean()
         })).optional(),
-        orgId: z.string().optional()
+        org_id: z.string().optional()
         },
         annotations: {
           title: "Create Pivot Report",
@@ -525,21 +525,21 @@ export function registerModellingTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableName, reportName, pivotDetails, filters, orgId }) => {
+    async ({ workspace_id, table_name, report_name, pivot_details, filters, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            if (!pivotDetails) {
+            if (!pivot_details) {
                 return ToolResponse("Pivot details must be provided.");
             }
-            if (!pivotDetails.row && !pivotDetails.column && !pivotDetails.data) {
-                return ToolResponse("At least one of 'row', 'column', or 'data' must be provided in pivotDetails.");
+            if (!pivot_details.row && !pivot_details.column && !pivot_details.data) {
+                return ToolResponse("At least one of 'row', 'column', or 'data' must be provided in pivot_details.");
             }
             const axisColumns: any[] = [];
             const requiredKeys = ["columnName", "tableName", "operation"];
             for (const [axisType, axisKey] of [["row", "row"], ["column", "column"], ["data", "data"]] as const) {
-                const axisList = (pivotDetails as any)[axisKey];
+                const axisList = (pivot_details as any)[axisKey];
                 if (axisList) {
                     if (!Array.isArray(axisList) || axisList.length === 0) {
                         return ToolResponse(`${axisKey} must be a non-empty list of dictionaries with 'columnName', 'tableName', and 'operation'.`);
@@ -559,8 +559,8 @@ export function registerModellingTools(server: ServerInstance) {
                 }
             }
             const conf: any = {
-                baseTableName: tableName,
-                title: reportName,
+                baseTableName: table_name,
+                title: report_name,
                 reportType: "pivot",
                 axisColumns
             };
@@ -575,12 +575,12 @@ export function registerModellingTools(server: ServerInstance) {
                 }
                 conf.filters = filters;
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace, bodyConf) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, bodyConf) => {
                 const analyticsClient = getAnalyticsClient();
-                const workspaceInst = analyticsClient.getWorkspaceInstance(orgId || "", workspace);
+                const workspaceInst = analyticsClient.getWorkspaceInstance(org_id || "", workspace);
                 const reportId = await workspaceInst.createReport(bodyConf);
                 return ToolResponse(`Pivot report created successfully. Report ID: ${reportId}`);
-            }, workspaceId, conf);
+            }, workspace_id, conf);
         } catch (err) {
             return logAndReturnError(err, "An error occurred while creating the pivot report");
         }
@@ -590,10 +590,10 @@ export function registerModellingTools(server: ServerInstance) {
     {
         description: "Create a query table in the specified workspace with the given name and SQL query",
         inputSchema: {
-        workspaceId: z.string().describe("The ID of the workspace in which to create the query table"),
-        tableName: z.string().describe("The name of the query table to create"),
+        workspace_id: z.string().describe("The ID of the workspace in which to create the query table"),
+        table_name: z.string().describe("The name of the query table to create"),
         query: z.string().describe("The SQL select query to create the query table"),
-        orgId: z.string().optional().describe("The ID of the organization to which the workspace belongs. Defaults to config.ORGID if not provided.")
+        org_id: z.string().optional().describe("The ID of the organization to which the workspace belongs. Defaults to config.ORGID if not provided.")
         },
         annotations: {
           title: "Create Query Table",
@@ -603,18 +603,18 @@ export function registerModellingTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableName, query, orgId }) => {
+    async ({ workspace_id, table_name, query, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async(orgId, workspace, table, sql) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async(org_id, workspace, table, sql) => {
                 const analyticsClient = getAnalyticsClient();
-                const workspaceInst = analyticsClient.getWorkspaceInstance(orgId, workspace);
+                const workspaceInst = analyticsClient.getWorkspaceInstance(org_id, workspace);
                 const configParam = {};
                 const tableId = await workspaceInst.createQueryTable(sql, table, configParam);
                 return ToolResponse(`Query table '${table}' created successfully. Table Id: ${tableId}`);
-            }, workspaceId, tableName, query);            
+            }, workspace_id, table_name, query);            
         } catch (err) {
             return logAndReturnError(err, "An error occurred while creating the query table");
         }
@@ -645,9 +645,9 @@ export function registerModellingTools(server: ServerInstance) {
             if (!org_id){
                 org_id = config.ORGID || "";
             }
-            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (orgId, workspace, view) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, view) => {
                 const analyticsClient = getAnalyticsClient();
-                const viewInstance = analyticsClient.getViewInstance(orgId || "", workspace, view);
+                const viewInstance = analyticsClient.getViewInstance(org_id || "", workspace, view);
                 await viewInstance.delete();
                 return ToolResponse(`View with ID ${view} deleted successfully from workspace ${workspace}.`);
             }, workspace_id, view_id);
