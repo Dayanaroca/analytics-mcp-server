@@ -32,9 +32,9 @@ export function registerDataTools(server: ServerInstance) {
         - If an error occurs, returns an error message.
         `,
         inputSchema: {
-        workspaceId: z.string().describe("The ID of the workspace where the query will be executed"),
+        workspace_id: z.string().describe("The ID of the workspace where the query will be executed"),
         sql_query: z.string().describe("The SQL query to be executed"),
-        orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+        org_id: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
         },
         annotations: {
           title: "Query Data",
@@ -44,14 +44,14 @@ export function registerDataTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, sql_query, orgId }) => {
+    async ({ workspace_id, sql_query, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async(orgId, workspace, sql) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async(org_id, workspace, sql) => {
                 const analyticsClient = getAnalyticsClient();
-                const bulk = analyticsClient.getBulkInstance(orgId, workspace);
+                const bulk = analyticsClient.getBulkInstance(org_id, workspace);
 
                 const jobId = await bulk.initiateBulkExportUsingSQL(sql, "CSV");
 
@@ -90,7 +90,7 @@ export function registerDataTools(server: ServerInstance) {
                 const limitedRows: string[][] = rows.slice(0, QUERY_DATA_ROW_LIMIT);
 
                 return ToolResponse(`Query executed successfully. Retrieved ${limitedRows.length} rows.\n${JSON.stringify({ columns, rows: limitedRows })}`);
-            }, workspaceId, sql_query);
+            }, workspace_id, sql_query);
         } catch (err) {
             return logAndReturnError(err, "An error occurred while executing the query");
         }
@@ -225,11 +225,11 @@ export function registerDataTools(server: ServerInstance) {
         - Mostly prefer html for charts, pdf dashboards, and csv for tables.
         `,
         inputSchema: {
-            workspaceId: z.string().describe("The ID of the workspace from which to export objects"),
+            workspace_id: z.string().describe("The ID of the workspace from which to export objects"),
             view_id: z.string().describe("The ID of the Zoho Analytics view to be exported. This can be a table, chart, or dashboard"),
             response_file_format: z.enum(["csv", "html", "pdf", "json", "xml", "xls", "image"]).describe('The format in which to export the objects. Supported formats are ["csv","json","xml","xls","pdf","html","image"].'),
             response_file_path: z.string().describe("The path where the exported file will be saved"),
-            orgId: z.string().optional().describe("The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.")
+            org_id: z.string().optional().describe("The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.")
         },
         annotations: {
           title: "Export View",
@@ -239,12 +239,12 @@ export function registerDataTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, view_id, response_file_format, response_file_path, orgId }) => {
+    async ({ workspace_id, view_id, response_file_format, response_file_path, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace, view, response_format, response_path)=> {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, view, response_format, response_path)=> {
                 const supportedFormats = ["csv", "json", "xml", "xls", "pdf", "html", "image"];
                 if (!supportedFormats.includes(response_format)) {
                     return ToolResponse(
@@ -256,14 +256,14 @@ export function registerDataTools(server: ServerInstance) {
                     isTabbedDashboard?: boolean;
                 }
                 const analyticsClient = getAnalyticsClient();
-                let viewDetails : ViewDetails  = await analyticsClient.getViewDetails(view_id, { withInvolvedMetaInfo: true }) as ViewDetails;                
+                let viewDetails : ViewDetails  = await analyticsClient.getViewDetails(view_id, { withInvolvedMetaInfo: true }) as ViewDetails;
                 if (viewDetails.viewType == "Dashboard" && viewDetails.isTabbedDashboard) {
                     const extension = response_path.split('.').pop();
                     if (extension?.toLowerCase() !== 'zip') {
                         response_path = response_path.replace(/\.[^/.]+$/, ".zip");
                     }
                 }
-                const bulk = analyticsClient.getBulkInstance(orgId || "", workspace);
+                const bulk = analyticsClient.getBulkInstance(org_id || "", workspace);
                 let fullPath = response_path;
                 try {
                     await bulk.exportData(view, response_format, fullPath);
@@ -296,7 +296,7 @@ export function registerDataTools(server: ServerInstance) {
                 return ToolResponse(
                     `Object exported successfully to ${fullPath} in ${response_format} format.`
                 );
-            }, workspaceId, view_id, response_file_format, response_file_path);
+            }, workspace_id, view_id, response_file_format, response_file_path);
         } catch (error) {
             return logAndReturnError(error, `An error occurred while exporting the view`);
         }
@@ -375,12 +375,12 @@ export function registerDataTools(server: ServerInstance) {
         - A string indicating the result of the import operation. If successful, it returns a success message; otherwise, it returns an error message.
         `,
         inputSchema: {
-            workspaceId: z.string().describe("The ID of the workspace containing the table"),
-            tableId: z.string().describe("The ID of the table to which data will be added. It is None if the data needs to be added to a new table"),
+            workspace_id: z.string().describe("The ID of the workspace containing the table"),
+            table_id: z.string().describe("The ID of the table to which data will be added. It is None if the data needs to be added to a new table"),
             data: z.array(z.record(z.string(), z.any())).optional().describe("The data to be added to the table in json format"),
             file_path: z.string().optional().describe("The path to a local file containing data to be added to the table"),
             file_type: z.enum(["csv", "json"]).optional().describe("The type of the file being imported (\"csv\", \"json\")"),
-            orgId: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
+            org_id: z.string().optional().describe("The organization ID for the request, if applicable. This is a mandatory parameter for shared workspaces")
         },
         annotations: {
           title: "Import Data",
@@ -390,14 +390,14 @@ export function registerDataTools(server: ServerInstance) {
           openWorldHint: false
         }
     },
-    async ({ workspaceId, tableId, data, file_path, file_type, orgId }) => {
+    async ({ workspace_id, table_id, data, file_path, file_type, org_id }) => {
         try {
-            if (!orgId) {
-                orgId = config.ORGID || "";
+            if (!org_id) {
+                org_id = config.ORGID || "";
             }
-            return await retryWithFallback([orgId], workspaceId, "WORKSPACE", async (orgId, workspace, table, input , path, type) => {
+            return await retryWithFallback([org_id], workspace_id, "WORKSPACE", async (org_id, workspace, table, input , path, type) => {
                 const analyticsClient = getAnalyticsClient();
-                const bulk = analyticsClient.getBulkInstance(orgId || "", workspace);
+                const bulk = analyticsClient.getBulkInstance(org_id || "", workspace);
                 if (path) {
                     if (path.startsWith("https")) {
                         return ToolResponse("File path cannot be a remote URL. Please download the file using the download_file tool and provide the local file path.");
@@ -417,7 +417,7 @@ export function registerDataTools(server: ServerInstance) {
                 }
                 const result = await bulk.importRawData(table, "append", "json", "true", JSON.stringify(input), { delimiter: '0' });
                 return ToolResponse(JSON.stringify(result));
-            }, workspaceId, tableId,  data, file_path, file_type);
+            }, workspace_id, table_id,  data, file_path, file_type);
         } catch (error) {
             return logAndReturnError(error, "An error occurred while importing data into the table");
         }
