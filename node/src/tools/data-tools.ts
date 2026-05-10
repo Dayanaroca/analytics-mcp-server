@@ -215,7 +215,7 @@ export function registerDataTools(server: ServerInstance) {
         }
     });
 
-    /*server.registerTool("export_view",
+    server.registerTool("export_view",
     {
         description: dedent`
         use_case:
@@ -300,7 +300,7 @@ export function registerDataTools(server: ServerInstance) {
         } catch (error) {
             return logAndReturnError(error, `An error occurred while exporting the view`);
         }
-    });*/
+    });
 
     server.registerTool("download_file",
     {
