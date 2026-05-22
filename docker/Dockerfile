@@ -2,6 +2,9 @@ FROM python:3.13-slim AS base
 
 WORKDIR /app
 
+COPY ./libs/sql_limit_enforcer/ ./libs/sql_limit_enforcer/
+RUN pip install --no-cache-dir ./libs/sql_limit_enforcer/
+
 COPY ./requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
