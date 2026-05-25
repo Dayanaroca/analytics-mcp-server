@@ -217,7 +217,7 @@ async def query_data(workspace_id: str, sql_query: str, org_id: str | None = Non
     - Page 1: LIMIT N OFFSET 0
     - Page 2: LIMIT N OFFSET N
     - Page 3: LIMIT N OFFSET 2N
-    The first tool response will indicate the actual value of N so you can paginate correctly.
+    The first tool response will indicate the actual value of N so you can paginate correctly. Note that the maximum value for limit is N, and it is not possible to increase this limit. If you need more rows, you must adjust the OFFSET in the query to fetch the next set of rows.
 
     Arguments:
         - workspace_id (str): The ID of the workspace where the query will be executed.
@@ -252,7 +252,8 @@ async def query_data(workspace_id: str, sql_query: str, org_id: str | None = Non
                     f"Here are the top {query_data_row_limit} rows for the given query "
                     f"(including the header row). It is possible (not confirmed) that there "
                     f"could be more rows this SELECT query could have produced. "
-                    f"If you need more rows, adjust the OFFSET in the SELECT query.\n\n"
+                    f"If you need more rows, adjust the OFFSET in the SELECT query."
+                    f"Note that the LIMIT cannot be increased beyond {query_data_row_limit} due to system constraints.\n\n"
                 )
                 return prefix + res.__str__()
         except Exception as e:
