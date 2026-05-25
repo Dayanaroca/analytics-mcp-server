@@ -12,7 +12,6 @@ click==8.2.1
 cloudpickle==3.1.2
 cryptography==46.0.3
 cyclopts==4.4.0
-debugpy==1.8.17
 diskcache==5.6.3
 dnspython==2.8.0
 docstring_parser==0.17.0

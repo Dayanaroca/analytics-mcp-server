@@ -70,7 +70,9 @@ async def query_data_implementation(org_id, workspace_id, sql_query):
         
         file_path = "/tmp/" + job_id + ".csv"
         await asyncio.to_thread(bulk.export_bulk_data, job_id, file_path)
-        result = await asyncio.to_thread(read_and_limit_csv, file_path, QUERY_DATA_ROW_LIMIT)
+        query_data_row_limit = Settings.QUERY_DATA_RESULT_ROW_LIMITS
+        query_data_row_limit = query_data_row_limit if query_data_row_limit is not None and query_data_row_limit <= 1000  else 1000
+        result = await asyncio.to_thread(read_and_limit_csv, file_path, query_data_row_limit)
         return result
     except Exception as e:
         raise e

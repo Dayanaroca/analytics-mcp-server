@@ -13,7 +13,7 @@ import traceback
 WORKSPACE_RESULT_LIMIT = Settings.ANALYTICS_WORKSPACE_LIST_RESULT_SIZE
 
 @mcp.tool()
-async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str | None = None) -> list[dict]:
+async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str | None = None) -> list[dict] | str:
     """
     <use_case>
         1) Fetches the list of workspaces in the user's organization.
@@ -43,6 +43,10 @@ async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str
             except Exception as e:
                 if e.errorCode and e.errorCode == 7301:
                     return []
+                ctx = get_context()
+                await ctx.error(traceback.format_exc())
+                return f"An error occurred while fetching workspaces: {str(e)}"
+
             return filter_and_limit_workspaces(workspaces, contains_str, owned_flag=True, limit=WORKSPACE_RESULT_LIMIT)
         else:
             workspaces = await asyncio.to_thread(analytics_client.get_workspaces)

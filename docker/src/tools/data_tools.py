@@ -6,10 +6,10 @@ import urllib
 import requests
 import pandas as pd
 from src.utils.analytics.common import retry_with_fallback
-from src.utils.analytics.data import import_data_implementation, export_view_implementation, query_data_implementation
+from src.utils.analytics.data import QUERY_DATA_ROW_LIMIT, import_data_implementation, export_view_implementation, query_data_implementation
 import traceback
 from fastmcp.server.dependencies import get_context
-
+from sql_limit_enforcer import enforce_limit
 
 @mcp.tool()
 async def analyze_file_structure(file_path: str) -> dict:
@@ -190,38 +190,76 @@ async def export_view(workspace_id: str, view_id: str, response_file_format: str
 @mcp.tool()
 async def query_data(workspace_id: str, sql_query: str, org_id: str | None = None) -> str:
     """
-    <use_case>
-    1. Executes a SQL query on the specified workspace and returns the top 20 rows as results.
-    2. This can be used to retrieve data from Zoho Analytics using custom SQL queries.
-    3. Use this when user asks for any queries from the data in the workspace.
-    4. Use this to gather insights from the data in the workspace and answer user queries.
-    5. Can be used to answer natural language queries by analysing the result of the SQL query.
-    </use_case>
+    Executes a SQL query on the specified workspace and returns the top N rows as results.
+    Use this to retrieve data from Zoho Analytics using custom SQL queries, gather insights,
+    and answer natural language queries by analyzing the results.
 
-    <important_notes>
-    - Always try to provide a mysql compatible sql select query alone.
-    - Try to optimize the query to return only the required data and minimize the amount of data returned.
-    - If table or column names contain spaces or special characters, enclose them in double quotes (e.g., `"Column Name"`).
+    Use Cases:
+    - Retrieve data from a Zoho Analytics workspace using custom SQL queries.
+    - Gather insights from the data and answer user queries.
+    - Answer natural language queries by analyzing SQL query results.
+
+    Important Notes:
+    - Always provide a MySQL-compatible SELECT query only.
+    - Always include a LIMIT clause and use aggregate queries (COUNT, SUM, AVG, etc.) wherever possible to minimize data transfer and avoid fetching raw rows unnecessarily.
+    - The tool enforces a maximum row cap of N rows - only the top N rows are returned
+      regardless of how many rows the query would otherwise produce.
+    - To paginate through results beyond the first N rows, use LIMIT with OFFSET
+      (e.g., LIMIT 20 OFFSET 20 for the next page).
+    - If table or column names contain spaces or special characters, enclose them in
+      double quotes (e.g., "Column Name").
     - Do not use more than one level of nested sub-queries.
-    - Instead of doing n queries, try to combine them into a single query using joins or unions or sub-queries, while ensuring the query remains efficient.
-    </important_notes>
+    - Combine multiple lookups into a single query using JOINs, UNIONs, or sub-queries
+      where possible, while keeping the query efficient and optimized.
 
-    <arguments>
-        workspace_id (str): The ID of the workspace where the query will be executed.
-        sql_query (str): The SQL query to be executed.
-        org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
-    </arguments>
+    Pagination Strategy:
+    Since only the top N rows are returned, when absolutely necessary, use LIMIT + OFFSET to walk through data:
+    - Page 1: LIMIT N OFFSET 0
+    - Page 2: LIMIT N OFFSET N
+    - Page 3: LIMIT N OFFSET 2N
+    The first tool response will indicate the actual value of N so you can paginate correctly. Note that the maximum value for limit is N, and it is not possible to increase this limit. If you need more rows, you must adjust the OFFSET in the query to fetch the next set of rows.
 
-    <returns>
-        Result of the SQL query in a comma-separated (list of list) format of the top 20 rows alone, the first row contains the column names. 
-        If an error occurs, returns an error message.
-    </returns>
+    Arguments:
+        - workspace_id (str): The ID of the workspace where the query will be executed.
+        - sql_query (str): The MySQL-compatible SELECT query to execute. Always try to generate an optimized query.
+        - org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+    
+
+     Returns:
+        - Top N rows of the query result in comma-separated (list of list) format.
+        - The first row contains column names.
+        - The response header indicates the actual value of N (e.g., "Here are the top N results").
+        - If an error occurs, returns an error message.
     """
     if not org_id:
         org_id = Settings.ORG_ID
 
+
+    query_data_row_limit = Settings.QUERY_DATA_RESULT_ROW_LIMITS
+    query_data_row_limit = query_data_row_limit if query_data_row_limit is not None and query_data_row_limit <= 1000  else 1000
+
+    try:
+        sql_query = enforce_limit(sql_query, query_data_row_limit)
+    except Exception as e:
+        ctx = get_context()
+        await ctx.error(traceback.format_exc())
+    
     try:
         res = await retry_with_fallback([org_id], workspace_id, "WORKSPACE", query_data_implementation, workspace_id=workspace_id, sql_query=sql_query)
+        try:
+            if isinstance(res, list) and len(res) >= query_data_row_limit:
+                prefix = (
+                    f"Here are the top {query_data_row_limit} rows for the given query "
+                    f"(including the header row). It is possible (not confirmed) that there "
+                    f"could be more rows this SELECT query could have produced. "
+                    f"If you need more rows, adjust the OFFSET in the SELECT query."
+                    f"Note that the LIMIT cannot be increased beyond {query_data_row_limit} due to system constraints.\n\n"
+                )
+                return prefix + res.__str__()
+        except Exception as e:
+            ctx = get_context()
+            await ctx.error(traceback.format_exc())
+        
         return res.__str__()
     except Exception as e:
         ctx = get_context()
