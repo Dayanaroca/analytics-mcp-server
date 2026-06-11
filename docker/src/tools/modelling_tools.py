@@ -1,5 +1,5 @@
 from src.mcp_instance import mcp
-from src.config import Settings, get_analytics_client_instance
+from src.config import Settings, get_analytics_client_instance, use_zoho_account
 from src.utils.analytics.common import retry_with_fallback
 from src.utils.analytics.modelling import (
     create_workspace_implementation, 
@@ -22,7 +22,7 @@ REQUIRED_SUMMARY_AGGREGATE_KEYS = {"columnName", "operation", "tableName"}
 
 
 @mcp.tool()
-async def create_workspace(workspace_name: str, org_id: str | None = None) -> str:
+async def create_workspace(workspace_name: str, org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
         Create a new workspace in zoho analytics with the given name.
@@ -33,9 +33,10 @@ async def create_workspace(workspace_name: str, org_id: str | None = None) -> st
     </important_notes>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], None, None, create_workspace_implementation, workspace_name=workspace_name)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], None, None, create_workspace_implementation, workspace_name=workspace_name)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -44,7 +45,7 @@ async def create_workspace(workspace_name: str, org_id: str | None = None) -> st
 
 
 @mcp.tool()
-async def create_table(workspace_id: str, table_name: str, columns_list: list[dict], org_id: str | None = None) -> str:
+async def create_table(workspace_id: str, table_name: str, columns_list: list[dict], org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
         Create a new table in the given workspace with the given name.
@@ -58,13 +59,15 @@ async def create_table(workspace_id: str, table_name: str, columns_list: list[di
                 - "COLUMNNAME": The name of the column.
                 - "DATATYPE": The data type of the column ("PLAIN", "NUMBER", "DATE").
         org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+        account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_table_implementation, 
-                                   workspace_id=workspace_id, table_name=table_name, columns_list=columns_list)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_table_implementation, 
+                                       workspace_id=workspace_id, table_name=table_name, columns_list=columns_list)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -73,7 +76,7 @@ async def create_table(workspace_id: str, table_name: str, columns_list: list[di
 
 
 @mcp.tool()
-async def create_aggregate_formula(workspace_id: str, table_id: str, expression: str, formula_name: str, org_id: str | None = None) -> str:
+async def create_aggregate_formula(workspace_id: str, table_id: str, expression: str, formula_name: str, org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
         Create an aggregate formula in the specified table of the workspace.
@@ -95,6 +98,7 @@ async def create_aggregate_formula(workspace_id: str, table_id: str, expression:
             The expression should be a valid SQL aggregate function.
         4. formula_name (str): The name of the aggregate formula.
         5. org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+        6. account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
 
     <returns>
@@ -102,10 +106,11 @@ async def create_aggregate_formula(workspace_id: str, table_id: str, expression:
     </returns>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_aggregate_formula_implementation, workspace_id=workspace_id,
-                                  table_id=table_id, expression=expression, formula_name=formula_name)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_aggregate_formula_implementation, workspace_id=workspace_id,
+                                      table_id=table_id, expression=expression, formula_name=formula_name)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -114,7 +119,7 @@ async def create_aggregate_formula(workspace_id: str, table_id: str, expression:
 
 
 @mcp.tool()
-async def create_chart_report(workspace_id: str, table_name: str, chart_name: str, chart_details: dict, filters: list[dict] | None = None, org_id: str | None = None) -> str:
+async def create_chart_report(workspace_id: str, table_name: str, chart_name: str, chart_details: dict, filters: list[dict] | None = None, org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
     - Create a chart report in the specified workspace for a table in Zoho Analytics.
@@ -142,6 +147,7 @@ async def create_chart_report(workspace_id: str, table_name: str, chart_name: st
         - y_axis (dict): Same structure as x_axis
     - filters (list[dict] | None): Optional. Filter definitions per <filters_args>.
     - org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+    - account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
 
         <filters_args>
             - tableName (str): The name of the table containing the column to filter.
@@ -165,11 +171,12 @@ async def create_chart_report(workspace_id: str, table_name: str, chart_name: st
     </returns>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_chart_report_implementation,workspace_id=workspace_id,
-                                   table_name=table_name, chart_name=chart_name, 
-                                   chart_details=chart_details, filters=filters)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_chart_report_implementation,workspace_id=workspace_id,
+                                       table_name=table_name, chart_name=chart_name, 
+                                       chart_details=chart_details, filters=filters)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -180,7 +187,7 @@ async def create_chart_report(workspace_id: str, table_name: str, chart_name: st
 
 
 @mcp.tool()
-async def create_pivot_report(workspace_id: str, table_name: str, report_name: str, pivot_details: dict, filters: list[dict] | None = None, org_id: str | None = None) -> str:
+async def create_pivot_report(workspace_id: str, table_name: str, report_name: str, pivot_details: dict, filters: list[dict] | None = None, org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
     - Create a pivot table report in the specified workspace and table in Zoho Analytics.
@@ -208,6 +215,7 @@ async def create_pivot_report(workspace_id: str, table_name: str, report_name: s
         - data (optional(list[dict])): same structure as row.
     - filters (list[dict] | None): Optional filters to restrict data scope. Filter definitions per <filters_args>.
     - org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+    - account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
 
     <filters_args>
         - tableName (str): The name of the table containing the column to filter.
@@ -231,11 +239,12 @@ async def create_pivot_report(workspace_id: str, table_name: str, report_name: s
     </returns>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_pivot_report_implementation,workspace_id=workspace_id,
-                                  table_name=table_name, report_name=report_name, 
-                                  pivot_details=pivot_details, filters=filters)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_pivot_report_implementation,workspace_id=workspace_id,
+                                      table_name=table_name, report_name=report_name, 
+                                      pivot_details=pivot_details, filters=filters)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -244,7 +253,7 @@ async def create_pivot_report(workspace_id: str, table_name: str, report_name: s
 
 
 @mcp.tool()
-async def create_summary_report(workspace_id: str, table_name: str, report_name: str, summary_details: dict, filters: list[dict] | None = None, org_id: str | None = None) -> str:
+async def create_summary_report(workspace_id: str, table_name: str, report_name: str, summary_details: dict, filters: list[dict] | None = None, org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
     - Create a summary report in the specified workspace and table in Zoho Analytics.
@@ -271,6 +280,7 @@ async def create_summary_report(workspace_id: str, table_name: str, report_name:
             - tableName (str): Need to be provided if the column belongs to another table with which a lookup is defined.
     - filters (list[dict] | None): Optional filters. See <filters_args> in create_chart tool.
     - org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+    - account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
 
     <filters_args>
         - tableName (str): The name of the table containing the column to filter.
@@ -295,11 +305,12 @@ async def create_summary_report(workspace_id: str, table_name: str, report_name:
     </returns>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_summary_report_implementation,workspace_id=workspace_id,
-                                  table_name=table_name, report_name=report_name, 
-                                  summary_details=summary_details, filters=filters)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_summary_report_implementation,workspace_id=workspace_id,
+                                      table_name=table_name, report_name=report_name, 
+                                      summary_details=summary_details, filters=filters)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -308,7 +319,7 @@ async def create_summary_report(workspace_id: str, table_name: str, report_name:
 
 
 @mcp.tool()
-async def create_query_table(workspace_id: str, table_name: str, query: str, org_id: str | None = None) -> str:
+async def create_query_table(workspace_id: str, table_name: str, query: str, org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
         1. Create a query table in the specified workspace with the given name and SQL query.
@@ -328,6 +339,7 @@ async def create_query_table(workspace_id: str, table_name: str, query: str, org
         table_name (str): The name of the query table to create.
         query (str): The SQL select query to create the query table.
         org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+        account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
 
     <returns>
@@ -335,10 +347,11 @@ async def create_query_table(workspace_id: str, table_name: str, query: str, org
     </returns>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_query_table_implementation, workspace_id=workspace_id,
-                                  table_name=table_name, query=query)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", create_query_table_implementation, workspace_id=workspace_id,
+                                      table_name=table_name, query=query)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -347,7 +360,7 @@ async def create_query_table(workspace_id: str, table_name: str, query: str, org
 
 
 @mcp.tool()
-async def delete_view(workspace_id: str, view_id: str, org_id: str | None = None) -> str:
+async def delete_view(workspace_id: str, view_id: str, org_id: str | None = None, account: str | None = None) -> str:
     """
     <use_case>
         Delete a view (table, report, or dashboard) in the specified workspace.
@@ -357,12 +370,14 @@ async def delete_view(workspace_id: str, view_id: str, org_id: str | None = None
         workspace_id (str): The ID of the workspace containing the view.
         view_id (str): The ID of the view to delete.
         org_id (str | None): The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+        account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", delete_view_implementation, workspace_id=workspace_id,view_id=view_id)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", delete_view_implementation, workspace_id=workspace_id,view_id=view_id)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())

@@ -1,5 +1,8 @@
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Literal
 from src.sdk.analytics_client import AnalyticsClient
 from dotenv import load_dotenv
@@ -9,6 +12,21 @@ from urllib.parse import urlparse
 from ipaddress import ip_address, ip_network, IPv4Network, IPv6Network
 
 load_dotenv()
+
+
+_current_account: ContextVar[str | None] = ContextVar("current_zoho_account", default=None)
+
+
+@dataclass(frozen=True)
+class ZohoAccount:
+    key: str
+    alias: str
+    client_id: str | None
+    client_secret: str | None
+    refresh_token: str | None
+    org_id: str
+    analytics_server_url: str
+    accounts_server_url: str | None
 
 
 class Settings:
@@ -25,6 +43,18 @@ class Settings:
             if project_domain.endswith(suffix):
                 return url
         return "https://accounts.zoho.com"
+
+    @staticmethod
+    def _normalize_server_url(url: str | None, default: str | None = None) -> str | None:
+        value = url or default
+        if not value:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        if not value.startswith(("http://", "https://")):
+            value = f"https://{value}"
+        return value.rstrip("/")
 
     @classmethod
     def _analytics_domain(cls) -> str:
@@ -209,6 +239,86 @@ class Settings:
             return []
         return [org_id.strip() for org_id in Settings.MCP_SERVER_ORG_IDS.split(",") if org_id.strip()]
 
+    @classmethod
+    def _build_account(cls, key: str) -> ZohoAccount:
+        suffix = f"_{key}"
+        analytics_server_url = cls._normalize_server_url(
+            os.getenv(f"ANALYTICS_SERVER_URL{suffix}"),
+            cls.ANALYTICS_SERVER_URL,
+        )
+        accounts_server_url = cls._normalize_server_url(os.getenv(f"ACCOUNTS_SERVER_URL{suffix}"))
+        if not accounts_server_url and analytics_server_url:
+            accounts_server_url = cls._get_accounts_url(urlparse(analytics_server_url).netloc)
+
+        return ZohoAccount(
+            key=key,
+            alias=(os.getenv(f"ANALYTICS_ACCOUNT_{key}_ALIAS") or f"account_{key}").strip().lower(),
+            client_id=os.getenv(f"ANALYTICS_CLIENT_ID{suffix}") or (cls.CLIENT_ID if key == "1" else None),
+            client_secret=os.getenv(f"ANALYTICS_CLIENT_SECRET{suffix}") or (cls.CLIENT_SECRET if key == "1" else None),
+            refresh_token=os.getenv(f"ANALYTICS_REFRESH_TOKEN{suffix}") or (cls.REFRESH_TOKEN if key == "1" else None),
+            org_id=os.getenv(f"ANALYTICS_ORG_ID{suffix}") or (cls.ORG_ID if key == "1" else "-1"),
+            analytics_server_url=analytics_server_url or "https://analyticsapi.zoho.com",
+            accounts_server_url=accounts_server_url,
+        )
+
+    @classmethod
+    def get_accounts(cls) -> dict[str, ZohoAccount]:
+        accounts = {"1": cls._build_account("1")}
+        account_2 = cls._build_account("2")
+        if account_2.client_id or account_2.client_secret or account_2.refresh_token:
+            accounts["2"] = account_2
+        return accounts
+
+    @classmethod
+    def get_account(cls, account: str | None = None) -> ZohoAccount:
+        account_key = (account or _current_account.get() or os.getenv("ANALYTICS_DEFAULT_ACCOUNT") or "1").strip().lower()
+        accounts = cls.get_accounts()
+        for key, zoho_account in accounts.items():
+            valid_names = {key, f"account_{key}", zoho_account.alias}
+            if account_key in valid_names:
+                missing = [
+                    name for name, value in {
+                        f"ANALYTICS_CLIENT_ID_{key}": zoho_account.client_id,
+                        f"ANALYTICS_CLIENT_SECRET_{key}": zoho_account.client_secret,
+                        f"ANALYTICS_REFRESH_TOKEN_{key}": zoho_account.refresh_token,
+                    }.items()
+                    if not value
+                ]
+                if missing:
+                    raise RuntimeError(f"Missing environment variables for Zoho account {key}: {', '.join(missing)}")
+                return zoho_account
+
+        available = ", ".join(
+            f"{key} ({zoho_account.alias})" for key, zoho_account in accounts.items()
+        )
+        raise ValueError(f"Unknown Zoho account '{account_key}'. Available accounts: {available}")
+
+    @staticmethod
+    def set_current_account(account: str | None):
+        return _current_account.set(account)
+
+    @staticmethod
+    def reset_current_account(token):
+        _current_account.reset(token)
+
+    @classmethod
+    def default_org_id(cls, account: str | None = None) -> str:
+        if cls.HOSTED_LOCATION == cls.CONSTANT_REMOTE_HOSTED_LOCATION:
+            return cls.ORG_ID
+        return cls.get_account(account).org_id
+
+
+@contextmanager
+def use_zoho_account(account: str | None):
+    if Settings.HOSTED_LOCATION == Settings.CONSTANT_REMOTE_HOSTED_LOCATION:
+        yield None
+        return
+    token = Settings.set_current_account(account)
+    try:
+        yield Settings.get_account(account)
+    finally:
+        Settings.reset_current_account(token)
+
 
 # Scenario-aware derived values kept for backward compatibility with existing imports
 # Settings.OAUTH_STANDARD_RATE_LIMIT_COUNT, Settings.OAUTH_STANDARD_RATE_LIMIT_WINDOW = Settings.get_standard_rate_limit()
@@ -225,7 +335,7 @@ def get_access_token():
     access_token = auth_header.split(" ")[1]
     return access_token
 
-analytics_client: AnalyticsClient  = None
+analytics_clients: dict[str, AnalyticsClient] = {}
 def get_analytics_client_instance(access_token = None) -> AnalyticsClient:
     """
     Returns a singleton instance of the AnalyticsClient.
@@ -242,12 +352,13 @@ def get_analytics_client_instance(access_token = None) -> AnalyticsClient:
         return client
 
 
-    global analytics_client
-    if not analytics_client:
-        analytics_client = AnalyticsClient.from_refresh_token(Settings.CLIENT_ID,  Settings.CLIENT_SECRET,  Settings.REFRESH_TOKEN)
-        if Settings.accounts_server_url() is None or Settings.ANALYTICS_SERVER_URL is None:
+    account = Settings.get_account()
+    if account.key not in analytics_clients:
+        analytics_client = AnalyticsClient.from_refresh_token(account.client_id, account.client_secret, account.refresh_token)
+        if account.accounts_server_url is None or account.analytics_server_url is None:
             raise RuntimeError("ACCOUNTS_SERVER_URL (or) ANALYTICS_SERVER_URL environment variable is not set. Please set it to your Zoho Analytics accounts server URL and analytics server URL respectively.")
-        analytics_client.accounts_server_url = Settings.accounts_server_url()
-        analytics_client.analytics_server_url = Settings.ANALYTICS_SERVER_URL
-    return analytics_client
+        analytics_client.accounts_server_url = account.accounts_server_url
+        analytics_client.analytics_server_url = account.analytics_server_url
+        analytics_clients[account.key] = analytics_client
+    return analytics_clients[account.key]
     

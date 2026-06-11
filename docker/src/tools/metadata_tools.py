@@ -1,5 +1,5 @@
 from src.mcp_instance import mcp
-from src.config import get_analytics_client_instance, Settings
+from src.config import get_analytics_client_instance, Settings, use_zoho_account
 from src.utils.analytics.metadata import filter_and_limit_workspaces, get_views
 import os
 from src.utils.analytics.common import retry_with_fallback
@@ -13,7 +13,7 @@ import traceback
 WORKSPACE_RESULT_LIMIT = Settings.ANALYTICS_WORKSPACE_LIST_RESULT_SIZE
 
 @mcp.tool()
-async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str | None = None) -> list[dict] | str:
+async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str | None = None, account: str | None = None) -> list[dict] | str:
     """
     <use_case>
         1) Fetches the list of workspaces in the user's organization.
@@ -28,6 +28,7 @@ async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str
     <arguments>
         include_shared_workspaces (bool): If True, includes shared workspaces in the list.
         contains_str (str | None): Optional string to filter workspaces with a contains criteria.
+        account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
 
     <returns>
@@ -36,35 +37,36 @@ async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str
     </returns>
     """
     try:
-        analytics_client = get_analytics_client_instance()
-        if not include_shared_workspaces:
-            try:
-                workspaces = await asyncio.to_thread(analytics_client.get_owned_workspaces)
-            except Exception as e:
-                if e.errorCode and e.errorCode == 7301:
-                    return []
-                ctx = get_context()
-                await ctx.error(traceback.format_exc())
-                return f"An error occurred while fetching workspaces: {str(e)}"
+        with use_zoho_account(account):
+            analytics_client = get_analytics_client_instance()
+            if not include_shared_workspaces:
+                try:
+                    workspaces = await asyncio.to_thread(analytics_client.get_owned_workspaces)
+                except Exception as e:
+                    if e.errorCode and e.errorCode == 7301:
+                        return []
+                    ctx = get_context()
+                    await ctx.error(traceback.format_exc())
+                    return f"An error occurred while fetching workspaces: {str(e)}"
 
-            return filter_and_limit_workspaces(workspaces, contains_str, owned_flag=True, limit=WORKSPACE_RESULT_LIMIT)
-        else:
-            workspaces = await asyncio.to_thread(analytics_client.get_workspaces)
-            owned_result = filter_and_limit_workspaces(
-                workspaces.get("ownedWorkspaces", []), contains_str, owned_flag=True, limit=WORKSPACE_RESULT_LIMIT
-            )
-            
-            if isinstance(owned_result, str):
-                return owned_result
-            
-            shared_result = filter_and_limit_workspaces(
-                workspaces.get("sharedWorkspaces", []), contains_str, owned_flag=False,
-                limit=WORKSPACE_RESULT_LIMIT - len(owned_result)
-            )
-            if isinstance(shared_result, str):
-                return shared_result
-            
-            return owned_result + shared_result
+                return filter_and_limit_workspaces(workspaces, contains_str, owned_flag=True, limit=WORKSPACE_RESULT_LIMIT)
+            else:
+                workspaces = await asyncio.to_thread(analytics_client.get_workspaces)
+                owned_result = filter_and_limit_workspaces(
+                    workspaces.get("ownedWorkspaces", []), contains_str, owned_flag=True, limit=WORKSPACE_RESULT_LIMIT
+                )
+                
+                if isinstance(owned_result, str):
+                    return owned_result
+                
+                shared_result = filter_and_limit_workspaces(
+                    workspaces.get("sharedWorkspaces", []), contains_str, owned_flag=False,
+                    limit=WORKSPACE_RESULT_LIMIT - len(owned_result)
+                )
+                if isinstance(shared_result, str):
+                    return shared_result
+                
+                return owned_result + shared_result
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -72,7 +74,7 @@ async def get_workspaces_list(include_shared_workspaces: bool, contains_str: str
     
 
 @mcp.tool()
-async def get_view_details(view_id: str) -> dict:
+async def get_view_details(view_id: str, account: str | None = None) -> dict:
     """
     <use_case>
         1) Fetches the details of a specific view in a workspace.
@@ -81,6 +83,7 @@ async def get_view_details(view_id: str) -> dict:
 
     <arguments>
         view_id (str): The ID of the view for which to fetch details.
+        account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
 
     <returns>
@@ -89,8 +92,9 @@ async def get_view_details(view_id: str) -> dict:
     </returns>
     """
     try:    
-        analytics_client = get_analytics_client_instance()
-        view_details = await asyncio.to_thread(analytics_client.get_view_details, view_id, config={"withInvolvedMetaInfo": True})
+        with use_zoho_account(account):
+            analytics_client = get_analytics_client_instance()
+            view_details = await asyncio.to_thread(analytics_client.get_view_details, view_id, config={"withInvolvedMetaInfo": True})
         view_details.pop('orgId')
         view_details.pop('createdByZuId')
         view_details.pop('lastDesignModifiedByZuId')
@@ -114,7 +118,8 @@ async def search_views(
     natural_language_query: str | None = None,
     view_contains_str: str | None = None,
     allowedViewTypesIds: list[int] | None = None,
-    org_id: str | None = None
+    org_id: str | None = None,
+    account: str | None = None
 ) -> list[dict]:
     """
     <use_case>
@@ -144,6 +149,7 @@ async def search_views(
             6 - Query Table: A derived table created from a custom SQL query
             7 - Dashboard: A collection of visualizations and reports
         - org_id (str | None): Organization ID. Defaults to config value if not provided.
+        - account (str | None): Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
 
     <returns>
@@ -152,13 +158,13 @@ async def search_views(
     </returns>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
 
-        if (view_contains_str is not None and view_contains_str.strip() != "") or (natural_language_query is None or natural_language_query.strip() == ""):
-            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", get_views,workspace_id=workspace_id, allowedViewTypesIds=allowedViewTypesIds, contains_str=view_contains_str, from_relevant_views_tool=False)
-    
-        else:
+            if (view_contains_str is not None and view_contains_str.strip() != "") or (natural_language_query is None or natural_language_query.strip() == ""):
+                return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", get_views,workspace_id=workspace_id, allowedViewTypesIds=allowedViewTypesIds, contains_str=view_contains_str, from_relevant_views_tool=False)
+        
             view_list = await retry_with_fallback([org_id], workspace_id, "WORKSPACE",get_views,workspace_id=workspace_id, allowedViewTypesIds=[0, 6], contains_str=None, from_relevant_views_tool=True)
             if view_list is None or len(view_list) == 0:
                 return "No views found in the workspace."

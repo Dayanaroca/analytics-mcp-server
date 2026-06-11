@@ -17,3 +17,7 @@ ENTRYPOINT ["python", "-m", "src.stdio"]
 # http image
 FROM base AS http
 ENTRYPOINT ["python", "-m", "src.http_server"]
+
+# static credentials http image for Railway/self-hosting this fork
+FROM base AS http-static
+ENTRYPOINT ["python", "-m", "src.http_static_server"]

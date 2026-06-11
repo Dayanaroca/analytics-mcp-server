@@ -1,12 +1,12 @@
 from src.mcp_instance import mcp
-from src.config import Settings, get_analytics_client_instance
+from src.config import Settings, get_analytics_client_instance, use_zoho_account
 from src.utils.analytics.common import retry_with_fallback
 from src.utils.analytics.row import add_row_implementation, delete_rows_implementation, update_rows_implementation
 import traceback
 from fastmcp.server.dependencies import get_context
 
 @mcp.tool()
-async def add_row(workspace_id: str, table_id: str, columns: dict[str,str], org_id: str | None = None) -> dict:
+async def add_row(workspace_id: str, table_id: str, columns: dict[str,str], org_id: str | None = None, account: str | None = None) -> dict:
     """
     <use_case>
     Adds a new row to the specified table.
@@ -17,12 +17,14 @@ async def add_row(workspace_id: str, table_id: str, columns: dict[str,str], org_
     - table_id: The ID of the table to which the row will be added.
     - columns: A dictionary containing the column names and their corresponding values for the new row.
     - org_id: The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+    - account: Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID    
-        await retry_with_fallback([org_id], workspace_id, "WORKSPACE", add_row_implementation, workspace_id=workspace_id, table_id=table_id, columns=columns)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+            await retry_with_fallback([org_id], workspace_id, "WORKSPACE", add_row_implementation, workspace_id=workspace_id, table_id=table_id, columns=columns)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -30,7 +32,7 @@ async def add_row(workspace_id: str, table_id: str, columns: dict[str,str], org_
     return "Row added successfully."
 
 @mcp.tool()
-async def delete_rows(workspace_id: str, table_id: str, criteria: str, org_id: str | None = None):
+async def delete_rows(workspace_id: str, table_id: str, criteria: str, org_id: str | None = None, account: str | None = None):
     """
     <use_case>
     - Deletes rows from the specified table based on the given criteria.
@@ -42,13 +44,15 @@ async def delete_rows(workspace_id: str, table_id: str, criteria: str, org_id: s
     - criteria: A string representing the criteria for selecting rows to delete.
         Example criteria: "\"SalesTable\".\"Region\"='East'"
     - org_id: The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+    - account: Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-            
-        await retry_with_fallback([org_id], workspace_id, "WORKSPACE", delete_rows_implementation, workspace_id=workspace_id, table_id=table_id, criteria=criteria)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+                
+            await retry_with_fallback([org_id], workspace_id, "WORKSPACE", delete_rows_implementation, workspace_id=workspace_id, table_id=table_id, criteria=criteria)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
@@ -56,7 +60,7 @@ async def delete_rows(workspace_id: str, table_id: str, criteria: str, org_id: s
     return "Rows deleted successfully."
 
 @mcp.tool()
-async def update_rows(workspace_id: str, table_id: str, columns: dict[str,str], criteria: str, org_id: str | None = None):
+async def update_rows(workspace_id: str, table_id: str, columns: dict[str,str], criteria: str, org_id: str | None = None, account: str | None = None):
     """
     <use_case>
     Updates rows in the specified table based on the given criteria.
@@ -69,13 +73,15 @@ async def update_rows(workspace_id: str, table_id: str, columns: dict[str,str], 
     - criteria: A string representing the criteria for selecting rows to update.
         Example criteria: "\"SalesTable\".\"Region\"='East'"
     - org_id: The ID of the organization to which the workspace belongs to. If not provided, it defaults to the organization ID from the configuration.
+    - account: Zoho account to use. Use "1", "2", or the configured account alias. Defaults to account 1.
     </arguments>
     """
     try:
-        if not org_id:
-            org_id = Settings.ORG_ID
-                        
-        return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", update_rows_implementation, workspace_id=workspace_id, table_id=table_id, criteria=criteria, columns=columns)
+        with use_zoho_account(account):
+            if not org_id:
+                org_id = Settings.default_org_id()
+                            
+            return await retry_with_fallback([org_id], workspace_id, "WORKSPACE", update_rows_implementation, workspace_id=workspace_id, table_id=table_id, criteria=criteria, columns=columns)
     except Exception as e:
         ctx = get_context()
         await ctx.error(traceback.format_exc())
